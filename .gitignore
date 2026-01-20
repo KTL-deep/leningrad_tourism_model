@@ -4,7 +4,7 @@
 data/
 
 # Если вы храните API ключи в settings.py, лучше исключить его и оставить settings.template.py
-# configs/settings.py
+ configs/settings.py
 
 # --- Python ---
 # Байт-код и кэши
