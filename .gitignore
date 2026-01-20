@@ -1,0 +1,46 @@
+# --- Project Specifics ---
+# Исключаем все данные, так как они могут быть тяжелыми или конфиденциальными
+# Основано на вашей структуре: "data/ # Хранение данных (исключено из git)"
+data/
+
+# Если вы храните API ключи в settings.py, лучше исключить его и оставить settings.template.py
+# configs/settings.py
+
+# --- Python ---
+# Байт-код и кэши
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# --- PyCharm IDE ---
+# Настройки редактора, которые не нужны в репозитории
+.idea/
+
+# --- Jupyter Notebooks ---
+# Чекпоинты ноутбуков (автосохранения)
+.ipynb_checkpoints
+*/.ipynb_checkpoints/*
+
+# --- Virtual Environments ---
+# Локальные виртуальные окружения
+venv/
+env/
+.venv/
+.env
+
+# --- OS System Files ---
+# Системные файлы macOS и Windows
+.DS_Store
+Thumbs.db
+ehthumbs.db
+
+# --- Logs & Databases ---
+*.log
+*.sqlite
+*.db
+
+# --- Testing ---
+.pytest_cache/
+.coverage
+htmlcov/
