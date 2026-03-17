@@ -2,11 +2,21 @@ import sys
 import os
 
 # Принудительно переключаем вывод на UTF-8, чтобы кириллица корректно
-# отображалась в Windows-терминале (по умолчанию используется cp1252)
-if hasattr(sys.stdout, 'reconfigure'):
-    sys.stdout.reconfigure(encoding='utf-8')
-if hasattr(sys.stderr, 'reconfigure'):
-    sys.stderr.reconfigure(encoding='utf-8')
+# отображалась в Windows-терминале и при редиректе в файл/пайп.
+try:
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    if hasattr(sys.stderr, "reconfigure"):
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+    else:
+        raise AttributeError("stderr has no reconfigure")
+except Exception:
+    import io
+
+    if hasattr(sys.stdout, "buffer"):
+        sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
+    if hasattr(sys.stderr, "buffer"):
+        sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8", errors="replace")
 
 import geopandas as gpd
 
@@ -14,6 +24,18 @@ from src.etl.osm_loader import OSMLoader
 from src.etl.gis_loader import GISLoader
 from src.generation.blocks_generator import CityBlocksGenerator
 from src.generation.ucm_builder import UCMBuilder
+
+def _safe_export(gdf: gpd.GeoDataFrame, path: str) -> None:
+    if gdf is None or getattr(gdf, "empty", True):
+        return
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    # GeoJSON ожидает EPSG:4326; приводим для удобства просмотра в ГИС
+    try:
+        if gdf.crs is not None and gdf.crs.to_epsg() != 4326:
+            gdf = gdf.to_crs(epsg=4326)
+    except Exception:
+        pass
+    gdf.to_file(path, driver="GeoJSON")
 
 def generate_ucm(region_name: str, output_path: str = "data/processed/ucm_blocks.geojson"):
     """
@@ -29,11 +51,13 @@ def generate_ucm(region_name: str, output_path: str = "data/processed/ucm_blocks
     
     # Получаем базовую геометрию (границы)
     boundary_gdf = osm.get_boundary()
+    _safe_export(boundary_gdf, "data/processed/osm/boundary.geojson")
     
     # Загружаем барьеры (дороги и вода)
     try:
         roads_gdf = osm.get_roads()
         print(f"Получено {len(roads_gdf)} сегментов дорог.")
+        _safe_export(roads_gdf, "data/processed/osm/roads.geojson")
     except Exception as e:
         print(f"Дороги не найдены: {e}")
         roads_gdf = None
@@ -41,6 +65,7 @@ def generate_ucm(region_name: str, output_path: str = "data/processed/ucm_blocks
     try:
         water_gdf = osm.get_water()
         print(f"Получено {len(water_gdf)} водных объектов.")
+        _safe_export(water_gdf, "data/processed/osm/water.geojson")
     except Exception as e:
         print(f"Водные объекты не найдены: {e}")
         water_gdf = None
@@ -48,11 +73,13 @@ def generate_ucm(region_name: str, output_path: str = "data/processed/ucm_blocks
     # Дополнительные слои для атрибутирования
     try:
         land_use_gdf = osm.get_land_use()
+        _safe_export(land_use_gdf, "data/processed/osm/landuse.geojson")
     except:
         land_use_gdf = gpd.GeoDataFrame()
         
     try:
         amenities_gdf = osm.get_amenities_and_buildings()
+        _safe_export(amenities_gdf, "data/processed/osm/amenities_buildings.geojson")
     except:
         amenities_gdf = gpd.GeoDataFrame()
 
