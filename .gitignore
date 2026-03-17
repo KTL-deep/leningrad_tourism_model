@@ -1,7 +1,9 @@
 # --- Project Specifics ---
 # Исключаем все данные, так как они могут быть тяжелыми или конфиденциальными
 # Основано на вашей структуре: "data/ # Хранение данных (исключено из git)"
-data/
+data/*
+!data/**/
+!data/**/.gitkeep
 
 # Если вы храните API ключи в settings.py, лучше исключить его и оставить settings.template.py
 configs/settings.py
@@ -44,3 +46,7 @@ ehthumbs.db
 .pytest_cache/
 .coverage
 htmlcov/
+
+# --- Custom / Debug ---
+cache/
+*.txt

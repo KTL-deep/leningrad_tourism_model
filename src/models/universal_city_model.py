@@ -1,11 +1,11 @@
 class UniversalCityModel:
     """
-    A class for aggregating all processed datasets within the Universal City Information Model.
+    Класс агрегирующий все обработанные наборы данных в рамках Универсальной информационной модели города (UCM).
     """
 
     def __init__(self):
         """
-        Initializes the UniversalCityModel.
+        Инициализация Универсальной информационной модели города.
         """
         self.blocks = []
         self.osm_data = None
@@ -14,42 +14,42 @@ class UniversalCityModel:
 
     def add_blocks(self, blocks):
         """
-        Adds generated spatial blocks to the model.
+        Добавляет сгенерированные пространственные блоки в модель.
 
-        :param blocks: A list of SpatialBlock objects.
+        :param blocks: Список объектов SpatialBlock.
         """
         self.blocks.extend(blocks)
-        print(f"Added {len(blocks)} spatial blocks to the Universal City Model.")
+        print(f"Добавлено {len(blocks)} пространственных блоков в Универсальную информационную модель города (UCM).")
 
     def set_osm_data(self, data):
         """
-        Sets the OpenStreetMap data.
+        Устанавливает данные OpenStreetMap.
 
-        :param data: The processed OSM data.
+        :param data: Обработанные данные OSM.
         """
         self.osm_data = data
-        print("Set OSM data in the Universal City Model.")
+        print("Данные OSM добавлены в модель UCM.")
 
     def set_regional_gis_data(self, data):
          """
-         Sets the regional GIS data.
+         Устанавливает региональные ГИС-данные.
 
-         :param data: The processed regional GIS data.
+         :param data: Обработанные региональные геоинформационные данные.
          """
          self.regional_gis_data = data
-         print("Set regional GIS data in the Universal City Model.")
+         print("Региональные ГИС-данные добавлены в модель UCM.")
 
     def set_cultural_heritage_objects(self, data):
           """
-          Sets the cultural heritage objects data.
+          Устанавливает данные об объектах культурного наследия.
 
-          :param data: The processed cultural heritage objects data.
+          :param data: Обработанные данные ОКН.
           """
           self.cultural_heritage_objects = data
-          print("Set cultural heritage objects in the Universal City Model.")
+          print("Объекты культурного наследия добавлены в модель UCM.")
 
     def get_summary(self):
         """
-        Returns a summary of the Universal City Model.
+        Возвращает сводку по Универсальной информационной модели города (UCM).
         """
-        return f"UniversalCityModel: {len(self.blocks)} Blocks, OSM Data: {'Yes' if self.osm_data is not None else 'No'}, Regional GIS Data: {'Yes' if self.regional_gis_data is not None else 'No'}, Cultural Heritage Objects: {'Yes' if self.cultural_heritage_objects is not None else 'No'}"
+        return f"Универсальная информационная модель (UCM): {len(self.blocks)} Блоков, OSM Данные: {'Да' if self.osm_data is not None else 'Нет'}, Региональные ГИС Данные: {'Да' if self.regional_gis_data is not None else 'Нет'}, Объекты культурного наследия: {'Да' if self.cultural_heritage_objects is not None else 'Нет'}"

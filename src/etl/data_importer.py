@@ -3,81 +3,76 @@ import geopandas as gpd
 import pandas as pd
 import requests
 from bs4 import BeautifulSoup
-
+import shapely
 
 class DataImporter:
     """
-    A class for downloading and validating spatial data.
+    Класс для загрузки пространственных данных об уличной сети, 
+    водных объектах и зеленом каркасе. Также реализует методы валидации.
     """
 
-    def __init__(self, place_name):
+    def __init__(self, region_name="Ленинградская область, Россия"):
         """
-        Initializes the DataImporter.
+        Инициализация загрузчика данных.
 
-        :param place_name: The name of the area of interest (e.g., "Leningrad Oblast, Russia").
+        :param region_name: Название региона для загрузки данных OSM
         """
-        self.place_name = place_name
+        self.region_name = region_name
 
-    def load_osm_data(self, tags):
+    def loadOSMData(self, tags):
         """
-        Loads OpenStreetMap data for a given set of tags.
+        Загрузка пространственных данных (уличная сеть, водные объекты, зеленый каркас).
 
-        :param tags: A dictionary of OSM tags to filter by.
-        :return: A GeoDataFrame with the requested OSM data.
+        :param tags: Словарь OSM тегов для фильтрации
+        :return: GeoDataFrame с запрошенными объектами
         """
-        print(f"Loading OSM data for tags: {tags}")
-        gdf = ox.features_from_place(self.place_name, tags)
-        print(f"Loaded {len(gdf)} features.")
-        return gdf
+        print(f"Загрузка данных OSM для тегов: {tags}")
+        try:
+            gdf = ox.features_from_place(self.region_name, tags)
+            if not self.validate_data(gdf):
+                raise ValueError("Ошибка валидации данных OSM.")
+            return gdf
+        except Exception as e:
+            print(f"Ошибка при загрузке данных OSM: {e}")
+            return gpd.GeoDataFrame()
 
-    def load_regional_gis(self, url):
+    def loadRegionalGIS(self, gis_source_url):
         """
-        Loads regional GIS data from a specified URL.
-        This is a placeholder and needs to be adapted to the specific GIS source.
+        Парсинг региональных геоинформационных систем (границы ООПТ, 
+        цифровые модели рельефа).
 
-        :param url: The URL of the GIS data source.
-        :return: A GeoDataFrame with the regional GIS data.
+        :param gis_source_url: URL источника данных или API
+        :return: GeoDataFrame с региональными данными
         """
-        print(f"Loading regional GIS data from: {url}")
-        # This is a placeholder. You would need to implement the logic to download
-        # and parse the data from the specific regional GIS portal.
-        # For example, it might involve web scraping or using a specific API.
-        response = requests.get(url)
-        # Assuming the data is in a format that can be read by geopandas
-        # This will likely need significant customization.
-        # gdf = gpd.read_file(response.text)
-        print("Regional GIS loading not fully implemented yet.")
-        return None
+        print(f"Загрузка региональных ГИС данных: {gis_source_url}")
+        # Заглушка: скачивание и парсинг региональных данных
+        # В реальности здесь будет requests.get, чтение zip-архивов и т.д.
+        pass
 
-    def load_cultural_heritage_objects(self, url):
+    def loadCulturalHeritageObjects(self, registry_url):
         """
-        Parses cultural heritage objects from a regional registry.
-        This is a placeholder and needs to be adapted to the specific registry format.
+        Парсинг региональных реестров, содержащих точечные координаты 
+        объектов культурного наследия Ленинградской области.
 
-        :param url: The URL of the cultural heritage registry.
-        :return: A GeoDataFrame with point coordinates of cultural heritage objects.
+        :param registry_url: URL реестра ОКН
+        :return: GeoDataFrame с объектами
         """
-        print(f"Loading cultural heritage objects from: {url}")
-        # This is a placeholder. The implementation will depend on the structure
-        # of the website or data source. It might involve scraping an HTML table.
-        response = requests.get(url)
-        soup = BeautifulSoup(response.content, 'html.parser')
-        # ... parsing logic here ...
-        print("Cultural heritage object loading not fully implemented yet.")
-        return None
+        print(f"Загрузка реестра ОКН: {registry_url}")
+        # Заглушка: скачивание HTML или JSON и парсинг
+        # В реальности здесь будет использование BeautifulSoup и/или pandas
+        pass
 
     def validate_data(self, gdf):
         """
-        Performs basic validation on a GeoDataFrame.
+        Валидация загруженных пространственных данных.
 
-        :param gdf: The GeoDataFrame to validate.
-        :return: True if the data is valid, False otherwise.
+        :param gdf: GeoDataFrame для проверки
+        :return: True, если данные валидны, иначе False
         """
         if gdf is None or gdf.empty:
-            print("Validation failed: GeoDataFrame is empty or None.")
+            print("Валидация не пройдена: GeoDataFrame пуст или отсутствует.")
             return False
         if 'geometry' not in gdf.columns:
-            print("Validation failed: 'geometry' column not found.")
+            print("Валидация не пройдена: отсутствует колонка 'geometry'.")
             return False
-        print("Data validation successful.")
         return True

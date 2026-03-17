@@ -1,44 +1,46 @@
 import geopandas as gpd
 from shapely.geometry import Polygon, MultiPolygon
 from src.models.spatial_block import SpatialBlock
+import blocksnet
 
 class BlockGenerator:
     """
-    A class for generating spatial blocks using clustering algorithms
-    and incorporating physical barriers and land use restrictions.
+    Модуль генерации городских блоков. Использует алгоритмы пространственной 
+    кластеризации для сегментации непрерывного пространства на дискретные 
+    полигональные элементы с учетом типов разрешенного использования земель 
+    и физических барьеров (магистрали, реки).
     """
 
-    def __init__(self, gdf_land_use, gdf_barriers):
+    def __init__(self, land_use_gdf=None, barriers_gdf=None):
         """
-        Initializes the BlockGenerator.
+        Инициализирует генератор блоков.
 
-        :param gdf_land_use: A GeoDataFrame with vector data on permitted land use types.
-        :param gdf_barriers: A GeoDataFrame representing physical barriers (e.g., highways, rivers).
+        :param land_use_gdf: Данные о типах разрешенного использования земель
+        :param barriers_gdf: Данные о физических барьерах
         """
-        self.gdf_land_use = gdf_land_use
-        self.gdf_barriers = gdf_barriers
+        self.land_use_gdf = land_use_gdf
+        self.barriers_gdf = barriers_gdf
 
-    def generate_blocks(self, gdf_boundary):
+    def apply_land_use_restrictions(self, blocks):
         """
-        Generates spatial blocks based on the provided boundary, land use restrictions, and barriers.
-
-        :param gdf_boundary: A GeoDataFrame representing the initial continuous space to be segmented.
-        :return: A list of SpatialBlock objects representing the generated blocks.
+        Настраивает алгоритмы кластеризации: тип землепользования автоматически 
+        устанавливает строгие градостроительные ограничения (исключение земель 
+        сельскохозяйственного назначения и зон отчуждения инженерных сетей).
         """
-        print(f"Generating blocks within boundary: {gdf_boundary}")
+        # Логика применения ограничений землепользования
+        pass
 
-        # This is a placeholder for the actual clustering algorithm.
-        # It would typically involve creating a grid, intersecting with barriers,
-        # filtering based on land use, and clustering the resulting polygons.
+    def generate_blocks(self, boundary_gdf):
+        """
+        Сегментирует непрерывное пространство на дискретные полигональные элементы.
 
-        # Example placeholder logic:
-        blocks = []
-        for i in range(10):
-             poly = Polygon([(0, 0), (1, 0), (1, 1), (0, 1), (0, 0)]) # Dummy polygon
-             block = SpatialBlock(i, poly)
-             # Apply restrictions based on land use (e.g., exclude agriculture, utility zones)
-             # ...
-             blocks.append(block)
+        :param boundary_gdf: Границы исследуемой территории
+        :return: Список объектов SpatialBlock
+        """
+        # Логика сегментации пространства (blocksnet или другие методы)
+        blocks_list = []
+        # ... генерация геометрий блоков ...
 
-        print(f"Generated {len(blocks)} blocks.")
-        return blocks
+        # self.apply_land_use_restrictions(blocks_list)
+
+        return blocks_list

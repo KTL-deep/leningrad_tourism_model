@@ -1,0 +1,8 @@
+blocksnet
+osmnx
+geopandas
+pandas
+requests
+beautifulsoup4
+shapely
+pandera

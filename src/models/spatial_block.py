@@ -1,57 +1,58 @@
-from shapely.geometry import Polygon
-
 class SpatialBlock:
     """
-    A class representing a spatial block, which is the smallest indivisible cell of spatial analysis.
-    It attributes information about services, buildings, and functional purposes to the polygon.
+    Класс, представляющий пространственный блок — минимальную неделимую ячейку
+    пространственного анализа. Пространственный блок хранит в себе геометрию
+    и атрибутированную информацию об объектах (сервисы, здания, ОКН).
     """
 
-    def __init__(self, block_id, polygon):
+    def __init__(self, block_id, geometry):
         """
-        Initializes the SpatialBlock.
+        Инициализация пространственного блока.
 
-        :param block_id: An identifier for the spatial block.
-        :param polygon: A Shapely Polygon representing the block's geometry.
+        :param block_id: Уникальный идентификатор блока
+        :param geometry: Геометрия блока (Shapely Polygon/MultiPolygon)
         """
         self.block_id = block_id
-        self.polygon = polygon
+        self.geometry = geometry
         self.services = []
         self.buildings = []
         self.functional_purpose = None
+        self.attributes = {}
 
-    def attribute_services(self, gdf_services):
+    def assign_services(self, services_data):
         """
-        Attributes the spatial block with information about services located within its polygon.
+        Атрибутирует блоку массив информации о расположенных внутри него сервисах.
 
-        :param gdf_services: A GeoDataFrame containing service points.
+        :param services_data: Данные о сервисах (GeoDataFrame)
         """
-        print(f"Attributing services to block {self.block_id}")
-        # Placeholder logic: Check if services intersect with the block's polygon
-        # and store relevant information.
-        for index, row in gdf_services.iterrows():
-            if self.polygon.contains(row['geometry']):
-                self.services.append(row['service_type'])
-                print(f"Service {row['service_type']} added.")
+        # Логика пространственного объединения (spatial join) для сервисов
+        pass
 
-    def attribute_buildings(self, gdf_buildings):
-         """
-         Attributes the spatial block with information about existing buildings within its polygon.
-
-         :param gdf_buildings: A GeoDataFrame containing building footprints.
-         """
-         print(f"Attributing buildings to block {self.block_id}")
-         # Placeholder logic: Check if buildings intersect with the block's polygon
-         # and store their functional purpose.
-         for index, row in gdf_buildings.iterrows():
-             if self.polygon.intersects(row['geometry']):
-                 self.buildings.append({
-                     'building_id': row.get('id', 'unknown'),
-                     'functional_purpose': row.get('building_type', 'unknown')
-                 })
-                 print(f"Building {row.get('id', 'unknown')} added.")
-
-    def __str__(self):
+    def assign_buildings(self, buildings_data):
         """
-        Returns a string representation of the spatial block.
+        Атрибутирует блоку массив информации о существующих зданиях и их функциональном назначении.
+
+        :param buildings_data: Данные о зданиях (GeoDataFrame)
         """
-        return f"SpatialBlock(ID: {self.block_id}, Services: {len(self.services)}, Buildings: {len(self.buildings)}, Functional Purpose: {self.functional_purpose})"
+        # Логика пространственного объединения (spatial join) для зданий
+        pass
+
+    def calculate_functional_purpose(self):
+        """
+        Определяет преобладающее функциональное назначение блока на основе 
+        находящихся в нем зданий и разрешенного использования земель.
+        """
+        # Логика определения функционального назначения
+        pass
+
+    def to_dict(self):
+        """
+        Преобразует данные блока в словарь для последующего анализа.
+        """
+        return {
+            'block_id': self.block_id,
+            'geometry': self.geometry,
+            'services_count': len(self.services),
+            'buildings_count': len(self.buildings),
+            'functional_purpose': self.functional_purpose
+        }
