@@ -23,6 +23,9 @@ class UCMBuilder:
         """
         if amenities_gdf is None or amenities_gdf.empty:
             return
+        if self.blocks is None or self.blocks.empty:
+            print("Атрибутирование пропущено: список блоков пуст.")
+            return
 
         print("Атрибутирование OSM сервисов и зданий...")
         # Убедимся, что СКи совпадают
@@ -52,6 +55,9 @@ class UCMBuilder:
         """
         if okn_gdf is None or okn_gdf.empty:
             return
+        if self.blocks is None or self.blocks.empty:
+            print("Атрибутирование ОКН пропущено: список блоков пуст.")
+            return
             
         print("Атрибутирование Объектов культурного наследия (ОКН)...")
         if self.blocks.crs != okn_gdf.crs:
@@ -76,6 +82,9 @@ class UCMBuilder:
         Привязка землепользования. Определяет доминирующий тип landuse для блока.
         """
         if landuse_gdf is None or landuse_gdf.empty:
+            return
+        if self.blocks is None or self.blocks.empty:
+            print("Атрибутирование землепользования пропущено: список блоков пуст.")
             return
             
         print("Атрибутирование типов землепользования...")
@@ -106,6 +115,9 @@ class UCMBuilder:
         Сохранение UCM в GeoJSON файл.
         """
         import os
+        if self.blocks is None or self.blocks.empty:
+            print("⚠️  Экспорт пропущен: список блоков пуст. Проверьте входные данные.")
+            return
         os.makedirs(os.path.dirname(filepath), exist_ok=True)
         print(f"Экспорт UCM модели в {filepath}...")
         self.blocks.to_file(filepath, driver="GeoJSON")

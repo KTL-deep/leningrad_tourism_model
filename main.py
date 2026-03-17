@@ -1,4 +1,13 @@
+import sys
 import os
+
+# Принудительно переключаем вывод на UTF-8, чтобы кириллица корректно
+# отображалась в Windows-терминале (по умолчанию используется cp1252)
+if hasattr(sys.stdout, 'reconfigure'):
+    sys.stdout.reconfigure(encoding='utf-8')
+if hasattr(sys.stderr, 'reconfigure'):
+    sys.stderr.reconfigure(encoding='utf-8')
+
 import geopandas as gpd
 
 from src.etl.osm_loader import OSMLoader

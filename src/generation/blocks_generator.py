@@ -7,8 +7,8 @@ from blocksnet.preprocessing import BlocksGenerator
 class CityBlocksGenerator:
     """
     Класс для разбиения непрерывного городского/регионального пространства
-    на дискретные полигоны - городские блоки. В качестве линий разреза 
-    используются дорожные сети и водные объекты. 
+    на дискретные полигоны — городские блоки. В качестве линий разреза
+    используются дорожные сети и водные объекты.
     Использует алгоритмы из библиотеки blocksnet.
     """
     
@@ -27,7 +27,7 @@ class CityBlocksGenerator:
         min_block_width: float = 10.0
     ) -> gpd.GeoDataFrame:
         """
-        Генерация блоков через BlocksGenerator (нарезание геометрии баррьерами).
+        Генерация блоков через BlocksGenerator (нарезание геометрии барьерами).
 
         :param roads_gdf: Линии дорожной сети (барьеры)
         :param water_gdf: Водные объекты (барьеры)
@@ -38,11 +38,30 @@ class CityBlocksGenerator:
         """
         print("Инициализация BlocksGenerator...")
         
-        # Сброс индексов, чтобы pandera validator в blocksnet не падал на MultiIndex из OSMnx
-        roads_clean = roads_gdf[['geometry']].reset_index(drop=True) if roads_gdf is not None else None
-        water_clean = water_gdf[['geometry']].reset_index(drop=True) if water_gdf is not None else None
-        rail_clean = railways_gdf[['geometry']].reset_index(drop=True) if railways_gdf is not None else None
-        bound_clean = self.boundary[['geometry']].reset_index(drop=True)
+        # Определяем метрическую UTM-проекцию по центру границы.
+        # blocksnet использует area-фильтр, который корректно работает только
+        # в метрических координатах (не в градусах EPSG:4326).
+        bound_wgs = self.boundary.to_crs(epsg=4326) if self.boundary.crs.to_epsg() != 4326 else self.boundary
+        centroid = bound_wgs.geometry.unary_union.centroid
+        zone = int((centroid.x + 180) / 6) + 1
+        utm_epsg = 32600 + zone if centroid.y >= 0 else 32700 + zone
+        utm_crs = f"EPSG:{utm_epsg}"
+        print(f"Используемая метрическая СК: {utm_crs}")
+        
+        # Перепроецируем все слои в метрическую СК и оставляем только колонку geometry
+        bound_clean = self.boundary[['geometry']].reset_index(drop=True).to_crs(utm_crs)
+        
+        roads_clean = None
+        if roads_gdf is not None and not roads_gdf.empty:
+            roads_clean = roads_gdf[['geometry']].reset_index(drop=True).to_crs(utm_crs)
+        
+        water_clean = None
+        if water_gdf is not None and not water_gdf.empty:
+            water_clean = water_gdf[['geometry']].reset_index(drop=True).to_crs(utm_crs)
+        
+        rail_clean = None
+        if railways_gdf is not None and not railways_gdf.empty:
+            rail_clean = railways_gdf[['geometry']].reset_index(drop=True).to_crs(utm_crs)
         
         bg = BlocksGenerator(
             boundaries=bound_clean,
