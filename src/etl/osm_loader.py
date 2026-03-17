@@ -84,3 +84,21 @@ class OSMLoader:
             amenities_gdf = ox.features_from_place(self.location_name, tags)
             
         return amenities_gdf
+
+    def get_railways(self, boundary_poly=None) -> gpd.GeoDataFrame:
+        """
+        Загрузка железнодорожной инфраструктуры (линейные объекты).
+        Может использоваться как дополнительный физический барьер при нарезке блоков.
+        """
+        print("Загрузка железнодорожной сети (Railways)...")
+        tags = {"railway": True}
+
+        if boundary_poly is not None:
+            rail_gdf = ox.features_from_polygon(boundary_poly, tags)
+        else:
+            rail_gdf = ox.features_from_place(self.location_name, tags)
+
+        rail_gdf = rail_gdf[
+            rail_gdf.geometry.type.isin(["LineString", "MultiLineString"])
+        ]
+        return rail_gdf

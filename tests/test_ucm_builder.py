@@ -1,7 +1,9 @@
-import geopandas as gpd
-import pandas as pd
 import pytest
-from shapely.geometry import Point, Polygon
+
+gpd = pytest.importorskip("geopandas")
+pd = pytest.importorskip("pandas")
+Point = pytest.importorskip("shapely.geometry").Point
+Polygon = pytest.importorskip("shapely.geometry").Polygon
 
 from src.generation.ucm_builder import UCMBuilder
 

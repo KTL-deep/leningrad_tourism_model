@@ -35,7 +35,16 @@ def _safe_export(gdf: gpd.GeoDataFrame, path: str) -> None:
             gdf = gdf.to_crs(epsg=4326)
     except Exception:
         pass
-    gdf.to_file(path, driver="GeoJSON")
+    try:
+        gdf.to_file(path, driver="GeoJSON")
+    except PermissionError:
+        # Windows/QGIS часто держит файл открытым: не падаем, а пишем рядом с суффиксом.
+        from datetime import datetime
+
+        ts = datetime.now().strftime("%Y%m%d-%H%M%S")
+        alt_path = f"{path}.locked-{ts}.geojson"
+        print(f"⚠️  Не удалось перезаписать {path} (файл занят). Пишем в {alt_path}")
+        gdf.to_file(alt_path, driver="GeoJSON")
 
 def generate_ucm(region_name: str, output_path: str = "data/processed/ucm_blocks.geojson"):
     """
@@ -70,6 +79,14 @@ def generate_ucm(region_name: str, output_path: str = "data/processed/ucm_blocks
         print(f"Водные объекты не найдены: {e}")
         water_gdf = None
 
+    try:
+        railways_gdf = osm.get_railways()
+        print(f"Получено {len(railways_gdf)} сегментов ж/д.")
+        _safe_export(railways_gdf, "data/processed/osm/railways.geojson")
+    except Exception as e:
+        print(f"Ж/д не найдены: {e}")
+        railways_gdf = None
+
     # Дополнительные слои для атрибутирования
     try:
         land_use_gdf = osm.get_land_use()
@@ -84,13 +101,16 @@ def generate_ucm(region_name: str, output_path: str = "data/processed/ucm_blocks
         amenities_gdf = gpd.GeoDataFrame()
 
     okn_gdf = gis.load_cultural_heritage()
-    # oopt_gdf = gis.load_protected_areas() # можно добавить позже
+    _safe_export(okn_gdf, "data/processed/gis/okn.geojson")
+    oopt_gdf = gis.load_protected_areas()
+    _safe_export(oopt_gdf, "data/processed/gis/oopt.geojson")
 
     # 2. Генерация блоков
     generator = CityBlocksGenerator(boundary_gdf=boundary_gdf)
     blocks_gdf = generator.generate_blocks(
         roads_gdf=roads_gdf,
         water_gdf=water_gdf,
+        railways_gdf=railways_gdf,
         min_block_width=5.0
     )
     
@@ -99,6 +119,7 @@ def generate_ucm(region_name: str, output_path: str = "data/processed/ucm_blocks
     builder.attribute_land_use(landuse_gdf=land_use_gdf)
     builder.attribute_amenities(amenities_gdf=amenities_gdf)
     builder.attribute_cultural_heritage(okn_gdf=okn_gdf)
+    builder.attribute_protected_areas(oopt_gdf=oopt_gdf)
     
     # 4. Сохранение
     builder.export_to_geojson(filepath=output_path)

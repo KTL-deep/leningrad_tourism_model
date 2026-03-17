@@ -1,7 +1,8 @@
 import os
 
-import geopandas as gpd
 import pytest
+
+gpd = pytest.importorskip("geopandas")
 
 from src.etl.gis_loader import GISLoader
 
