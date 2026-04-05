@@ -1,16 +1,11 @@
 import geopandas as gpd
-import pandera as pa
-# Хотфикс: отключаем валидацию pandera, чтобы избежать ошибки булевого оператора `|` для GeoSeries в выводе BlocksNet
-setattr(pa.DataFrameSchema, 'validate', lambda self, check_obj, *args, **kwargs: check_obj)
-from blocksnet.preprocessing import BlocksGenerator
-from shapely.ops import unary_union
+import numpy as np
+from shapely.geometry import box
 
 class CityBlocksGenerator:
     """
-    Класс для разбиения непрерывного городского/регионального пространства
-    на дискретные полигоны — городские блоки. В качестве линий разреза
-    используются дорожные сети и водные объекты.
-    Использует алгоритмы из библиотеки blocksnet.
+    Класс для подготовки дискретных полигонов (кадастровых блоков) для анализа.
+    Обрезает кадастровые участки по границе целевой территории и очищает мелкие топологические артефакты.
     """
     
     def __init__(self, boundary_gdf: gpd.GeoDataFrame):
@@ -20,32 +15,44 @@ class CityBlocksGenerator:
         """
         self.boundary = boundary_gdf
 
+    def _generate_grid(self, bound_clean: gpd.GeoDataFrame, utm_crs: str, cell_size_m: float) -> gpd.GeoDataFrame:
+        """
+        Генерирует аналитическую сетку, покрывающую переданный экстент.
+        """
+        bounds = bound_clean.total_bounds
+        minx, miny, maxx, maxy = bounds
+        
+        x_coords = np.arange(minx, maxx, cell_size_m)
+        y_coords = np.arange(miny, maxy, cell_size_m)
+        
+        polygons = []
+        for x in x_coords:
+            for y in y_coords:
+                polygons.append(box(x, y, x + cell_size_m, y + cell_size_m))
+                
+        grid_gdf = gpd.GeoDataFrame({'geometry': polygons}, crs=utm_crs)
+        return grid_gdf
+
     def generate_blocks(
         self, 
-        roads_gdf: gpd.GeoDataFrame = None, 
-        water_gdf: gpd.GeoDataFrame = None,
-        railways_gdf: gpd.GeoDataFrame = None,
-        min_block_width: float = 10.0,
-        rail_corridor_half_width_m: float = 20.0
+        cadastre_gdf: gpd.GeoDataFrame = None,
+        landuse_gdf: gpd.GeoDataFrame = None,
+        min_area_m2: float = 10.0,
+        grid_cell_size: float = 50.0
     ) -> gpd.GeoDataFrame:
         """
-        Генерация блоков через BlocksGenerator (нарезание геометрии барьерами).
-
-        :param roads_gdf: Линии дорожной сети (барьеры)
-        :param water_gdf: Водные объекты (барьеры)
-        :param railways_gdf: Железнодорожные пути (дополнительные барьеры)
-        :param min_block_width: Минимальная ширина полученного блока (для исключения артефактов)
-        :param rail_corridor_half_width_m: Полуширина ж/д коридора (м). Используется, чтобы
-            схлопывать параллельные пути в один “коридор” и не получать узкие “щепки”
-            между путями (типично 10–40 м).
+        Подготовка кадастровых блоков или их альтернатив (Fallback).
         
-        :return: GeoDataFrame с полигонами кварталов/блоков
+        :param cadastre_gdf: Слой кадастровых участков (наивысший приоритет).
+        :param landuse_gdf: Слой типов землепользования OSM (резервный вариант 1).
+        :param min_area_m2: Минимальная площадь получаемого блока (кв.м.).
+        :param grid_cell_size: Размер стороны ячейки аналитической сетки в метрах (резервный вариант 2).
+        
+        :return: GeoDataFrame с полигонами пространственных блоков
         """
-        print("Инициализация BlocksGenerator...")
+        print("Инициализация генератора кадастровых блоков...")
         
         # Определяем метрическую UTM-проекцию по центру границы.
-        # blocksnet использует area-фильтр, который корректно работает только
-        # в метрических координатах (не в градусах EPSG:4326).
         bound_wgs = self.boundary.to_crs(epsg=4326) if self.boundary.crs.to_epsg() != 4326 else self.boundary
         centroid = bound_wgs.geometry.unary_union.centroid
         zone = int((centroid.x + 180) / 6) + 1
@@ -53,60 +60,46 @@ class CityBlocksGenerator:
         utm_crs = f"EPSG:{utm_epsg}"
         print(f"Используемая метрическая СК: {utm_crs}")
         
-        # Перепроецируем все слои в метрическую СК и оставляем только колонку geometry
+        # Перепроецируем границу
         bound_clean = self.boundary[['geometry']].reset_index(drop=True).to_crs(utm_crs)
         
-        roads_clean = None
-        if roads_gdf is not None and not roads_gdf.empty:
-            roads_clean = roads_gdf[['geometry']].reset_index(drop=True).to_crs(utm_crs)
+        has_cadastre = cadastre_gdf is not None and not cadastre_gdf.empty
+        has_landuse = landuse_gdf is not None and not landuse_gdf.empty
         
-        water_clean = None
-        if water_gdf is not None and not water_gdf.empty:
-            water_clean = water_gdf[['geometry']].reset_index(drop=True).to_crs(utm_crs)
+        if has_cadastre:
+            print("🟢 Обнаружены кадастровые данные. Проецирование контуров...")
+            sources_utm = cadastre_gdf.to_crs(utm_crs)
+        elif has_landuse:
+            print("🟡 Кадастр отсутствует! Fallback 1: Используем контуры землепользования (OSM Landuse) как блоки...")
+            sources_utm = landuse_gdf.to_crs(utm_crs)
+        else:
+            print(f"🔴 Входных векторных данных нет! Fallback 2: Генерируем сплошную аналитическую сетку {grid_cell_size}x{grid_cell_size} м...")
+            sources_utm = self._generate_grid(bound_clean, utm_crs, cell_size_m=grid_cell_size)
+            
+        print("Обрезка блоков по границе целевой территории (intersection)...")
+        # Обрезаем источники границей (пересечение)
+        try:
+            blocks_gdf = gpd.overlay(sources_utm, bound_clean, how='intersection', keep_geom_type=False)
+            # Оставляем только полигоны
+            blocks_gdf = blocks_gdf[blocks_gdf.geometry.type.isin(['Polygon', 'MultiPolygon'])]
+        except Exception as e:
+            print(f"Ошибка при пересечении блоков с границей: {e}")
+            blocks_gdf = sources_utm
+            
+        print("Базовая проверка валидности геометрий и фильтрация артефактов...")
+        blocks_gdf.geometry = blocks_gdf.geometry.make_valid()
+        blocks_gdf = blocks_gdf[blocks_gdf.geometry.is_valid & ~blocks_gdf.geometry.is_empty]
         
-        rail_clean = None
-        if railways_gdf is not None and not railways_gdf.empty:
-            rail_clean_raw = railways_gdf[['geometry']].reset_index(drop=True).to_crs(utm_crs)
-            rail_clean = self._railways_to_corridor_barrier(
-                rail_clean_raw,
-                half_width_m=rail_corridor_half_width_m
-            )
+        # Фильтрация артефактов ("щепок") по площади (geometry.area возвращает кв.м. в UTM)
+        areas = blocks_gdf.geometry.area
+        blocks_gdf = blocks_gdf[areas >= min_area_m2].copy()
         
-        bg = BlocksGenerator(
-            boundaries=bound_clean,
-            roads=roads_clean,
-            railways=rail_clean,
-            water=water_clean
-        )
+        # Сбрасываем индексы после всех фильтраций
+        blocks_gdf = blocks_gdf.reset_index(drop=True)
         
-        print("Запуск пространственной кластеризации (нарезание блоков)...")
-        blocks_gdf = bg.run(min_block_width=min_block_width)
-        print(f"Сгенерировано {len(blocks_gdf)} блоков.")
+        print("Присвоение стабильных идентификаторов (block_id)...")
+        blocks_gdf['block_id'] = range(len(blocks_gdf))
+        
+        print(f"Сгенерировано {len(blocks_gdf)} кадастровых блоков (размером >= {min_area_m2} кв.м.).")
         
         return blocks_gdf
-
-    @staticmethod
-    def _railways_to_corridor_barrier(railways_utm: gpd.GeoDataFrame, half_width_m: float) -> gpd.GeoDataFrame:
-        """
-        Преобразует набор ж/д линий (часто параллельных) в один/несколько
-        линейных барьеров по границе “ж/д коридора”.
-
-        Идея: буферизуем линии на half_width_m, растворяем (unary_union),
-        берём границу получившегося полигона/мультиполигона как LineString/MultiLineString.
-        Это убирает внутренние разрезы между путями (и “щепки”).
-        """
-        if railways_utm is None or railways_utm.empty:
-            return None
-
-        # Буферизуем и растворяем
-        buffered = railways_utm.geometry.buffer(float(half_width_m))
-        corridor = unary_union([geom for geom in buffered if geom is not None and not geom.is_empty])
-
-        if corridor is None:
-            return None
-
-        boundary = corridor.boundary
-        if boundary is None or boundary.is_empty:
-            return None
-
-        return gpd.GeoDataFrame(geometry=[boundary], crs=railways_utm.crs)

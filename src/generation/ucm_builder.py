@@ -50,19 +50,39 @@ class UCMBuilder:
         self.blocks = self.blocks.merge(poi_counts, on='block_id', how='left')
         self.blocks['poi_count'] = self.blocks['poi_count'].fillna(0).astype(int)
 
-        # Подсчет по типам (колонки могут отсутствовать)
-        for src_col, out_col in (
-            ('amenity', 'amenity_count'),
-            ('building', 'building_count'),
-            ('leisure', 'leisure_count'),
-        ):
-            if src_col in joined.columns:
-                counts = joined[joined[src_col].notna()].groupby('block_id')[src_col].count().reset_index()
-                counts.rename(columns={src_col: out_col}, inplace=True)
-                self.blocks = self.blocks.merge(counts, on='block_id', how='left')
+        # Семантическая классификация для AHP матрицы
+        def count_matches(group, col, values):
+            if col not in group.columns:
+                return 0
+            if callable(values):
+                return group[col].apply(values).sum()
             else:
-                self.blocks[out_col] = 0
-            self.blocks[out_col] = self.blocks[out_col].fillna(0).astype(int)
+                return group[col].isin(values).sum()
+
+        rows = []
+        for block_id, group in joined.groupby('block_id'):
+            food = count_matches(group, 'amenity', ['cafe', 'restaurant', 'fast_food', 'bar', 'pub', 'food_court'])
+            accomm = count_matches(group, 'tourism', ['hotel', 'motel', 'hostel', 'guest_house', 'apartment', 'camp_site'])
+            transport = (
+                count_matches(group, 'highway', ['bus_stop']) + 
+                count_matches(group, 'public_transport', lambda x: pd.notna(x)) + 
+                count_matches(group, 'railway', ['station', 'halt'])
+            )
+            rows.append({
+                'block_id': block_id,
+                'food_count': int(food),
+                'accommodation_count': int(accomm),
+                'transport_count': int(transport)
+            })
+            
+        if rows:
+            semantic_counts = pd.DataFrame(rows)
+            self.blocks = self.blocks.merge(semantic_counts, on='block_id', how='left')
+        
+        for c in ['food_count', 'accommodation_count', 'transport_count']:
+            if c not in self.blocks.columns:
+                self.blocks[c] = 0
+            self.blocks[c] = self.blocks[c].fillna(0).astype(int)
 
     def attribute_cultural_heritage(self, okn_gdf: gpd.GeoDataFrame):
         """
@@ -160,6 +180,24 @@ class UCMBuilder:
             
         intersections['intersect_area'] = intersections.geometry.area
         
+        # Семантика: Доля леса (forest_share)
+        forest_mask = pd.Series(False, index=intersections.index)
+        if 'landuse' in intersections.columns:
+            forest_mask |= (intersections['landuse'] == 'forest')
+        if 'natural' in intersections.columns:
+            forest_mask |= (intersections['natural'] == 'wood')
+            
+        forest_inter = intersections[forest_mask]
+        if not forest_inter.empty:
+            forest_area = forest_inter.groupby('block_id')['intersect_area'].sum().reset_index(name='forest_area_m2')
+            self.blocks = self.blocks.merge(forest_area, on='block_id', how='left')
+            self.blocks['forest_area_m2'] = self.blocks['forest_area_m2'].fillna(0.0)
+        else:
+            self.blocks['forest_area_m2'] = 0.0
+            
+        self.blocks['forest_share'] = (self.blocks['forest_area_m2'] / self.blocks.geometry.area).fillna(0.0)
+        
+        # Доминирующее землепользование
         if 'landuse' in intersections.columns:
             # Находим тип landuse с наибольшей площадью внутри блока
             idx = intersections.groupby('block_id')['intersect_area'].idxmax()

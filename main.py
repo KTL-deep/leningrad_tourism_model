@@ -62,30 +62,9 @@ def generate_ucm(region_name: str, output_path: str = "data/processed/ucm_blocks
     boundary_gdf = osm.get_boundary()
     _safe_export(boundary_gdf, "data/processed/osm/boundary.geojson")
     
-    # Загружаем барьеры (дороги и вода)
-    try:
-        roads_gdf = osm.get_roads()
-        print(f"Получено {len(roads_gdf)} сегментов дорог.")
-        _safe_export(roads_gdf, "data/processed/osm/roads.geojson")
-    except Exception as e:
-        print(f"Дороги не найдены: {e}")
-        roads_gdf = None
-        
-    try:
-        water_gdf = osm.get_water()
-        print(f"Получено {len(water_gdf)} водных объектов.")
-        _safe_export(water_gdf, "data/processed/osm/water.geojson")
-    except Exception as e:
-        print(f"Водные объекты не найдены: {e}")
-        water_gdf = None
-
-    try:
-        railways_gdf = osm.get_railways()
-        print(f"Получено {len(railways_gdf)} сегментов ж/д.")
-        _safe_export(railways_gdf, "data/processed/osm/railways.geojson")
-    except Exception as e:
-        print(f"Ж/д не найдены: {e}")
-        railways_gdf = None
+    # Загружаем кадастровые участки и кварталы
+    cadastre_gdf = gis.load_cadastral_data("cadastre.geojson")
+    _safe_export(cadastre_gdf, "data/processed/gis/cadastre.geojson")
 
     # Дополнительные слои для атрибутирования
     try:
@@ -105,13 +84,13 @@ def generate_ucm(region_name: str, output_path: str = "data/processed/ucm_blocks
     oopt_gdf = gis.load_protected_areas()
     _safe_export(oopt_gdf, "data/processed/gis/oopt.geojson")
 
-    # 2. Генерация блоков
+    # 2. Генерация блоков (каскадная генерация: Кадастр -> Landuse -> Сетка)
     generator = CityBlocksGenerator(boundary_gdf=boundary_gdf)
     blocks_gdf = generator.generate_blocks(
-        roads_gdf=roads_gdf,
-        water_gdf=water_gdf,
-        railways_gdf=railways_gdf,
-        min_block_width=5.0
+        cadastre_gdf=cadastre_gdf,
+        landuse_gdf=land_use_gdf,
+        min_area_m2=10.0,
+        grid_cell_size=50.0
     )
     
     # 3. Атрибутирование блоков (UCM)
@@ -124,6 +103,20 @@ def generate_ucm(region_name: str, output_path: str = "data/processed/ucm_blocks
     # 4. Сохранение
     builder.export_to_geojson(filepath=output_path)
     print(f"=== Генерация UCM успешно завершена. Файл: {output_path} ===")
+    
+    # 5. Сценарное математическое взвешивание AHP (Шаг 3)
+    try:
+        from src.analysis.ahp import run_stage2_ahp
+        from pathlib import Path
+        print("\n=== Запуск сценарного взвешивания (AHP) ===")
+        run_stage2_ahp(
+            blocks_path=Path(output_path),
+            constants_path=Path("configs/ahp_constants.json"),
+            output_csv=Path("data/processed/ahp_block_scores.csv"),
+            output_geojson=Path("data/processed/ucm_blocks_with_attractiveness.geojson")
+        )
+    except Exception as e:
+        print(f"⚠️ Ошибка при расчете AHP: {e}")
 
 if __name__ == "__main__":
     # Для теста будем использовать небольшой населенный пункт в Ленинградской области

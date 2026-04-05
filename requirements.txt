@@ -1,9 +1,12 @@
-blocksnet
 osmnx
 geopandas
 pandas
 requests
 beautifulsoup4
 shapely
-pandera
 pytest
+streamlit
+folium
+streamlit-folium
+branca
+matplotlib

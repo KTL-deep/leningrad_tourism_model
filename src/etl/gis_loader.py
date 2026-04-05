@@ -118,6 +118,31 @@ class GISLoader:
         return gdf
 
     # ------------------------------------------------------------------
+    # Кадастровые данные (участки/кварталы)
+    # ------------------------------------------------------------------
+
+    def load_cadastral_data(self, filename="cadastre.geojson") -> gpd.GeoDataFrame:
+        """
+        Загрузка кадастровых участков/кварталов из локального файла.
+        :param filename: Имя файла в директории данных
+        :return: GeoDataFrame с полигонами кадастрового деления
+        """
+        filepath = os.path.join(self.data_dir, filename)
+        if not os.path.exists(filepath):
+            print(f"Внимание: файл кадастра не найден по пути {filepath}. Возвращен пустой GeoDataFrame.")
+            return gpd.GeoDataFrame(columns=["geometry"], geometry="geometry", crs="EPSG:4326")
+
+        print(f"Загрузка кадастровых участков из {filepath}...")
+        try:
+            gdf = gpd.read_file(filepath)
+            # Базовая очистка
+            gdf.geometry = gdf.geometry.make_valid()
+            return gdf[gdf.geometry.is_valid & ~gdf.geometry.is_empty]
+        except Exception as e:
+            print(f"Ошибка при загрузке кадастра: {e}")
+            return gpd.GeoDataFrame(columns=["geometry"], geometry="geometry", crs="EPSG:4326")
+
+    # ------------------------------------------------------------------
     # DEM — Цифровая модель рельефа
     # ------------------------------------------------------------------
 

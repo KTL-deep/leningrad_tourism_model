@@ -5,8 +5,7 @@ from shapely.geometry import Polygon, MultiPolygon
 class OSMLoader:
     """
     Класс для загрузки открытых пространственных данных из OSM.
-    Используется для подготовки базовых слоев и физических барьеров 
-    для генерации городских блоков.
+    Используется для подготовки базовых слоев (границы, сервисы).
     """
     
     def __init__(self, location_name="Ленинградская область, Россия"):
@@ -20,48 +19,14 @@ class OSMLoader:
         gdf = ox.geocode_to_gdf(self.location_name)
         return gdf[['geometry', 'display_name']]
 
-    def get_roads(self, boundary_poly=None) -> gpd.GeoDataFrame:
-        """
-        Загрузка графа дорожной сети и конвертация его в GeoDataFrame (ребра).
-        Используется в качестве физических барьеров (линий разреза).
-        Исключаются мелкие тропы.
-        """
-        print("Загрузка дорожной сети (магистрали, улицы)...")
-        # custom_filter для исключения мелких дорожек, если необходимо
-        custom_filter = '["highway"~"motorway|trunk|primary|secondary|tertiary|unclassified|residential"]'
-        
-        if boundary_poly is not None:
-            # boundary_poly это shapely Polygon/MultiPolygon
-            graph = ox.graph_from_polygon(boundary_poly, network_type='drive', custom_filter=custom_filter)
-        else:
-            graph = ox.graph_from_place(self.location_name, network_type='drive', custom_filter=custom_filter)
-            
-        _, edges = ox.graph_to_gdfs(graph)
-        return edges
 
-    def get_water(self, boundary_poly=None) -> gpd.GeoDataFrame:
-        """
-        Загрузка водных объектов (реки, каналы, озера).
-        Также используются как физические барьеры.
-        """
-        print("Загрузка водных объектов...")
-        tags = {'waterway': True, 'water': True, 'natural': 'water'}
-        
-        if boundary_poly is not None:
-            water_gdf = ox.features_from_polygon(boundary_poly, tags)
-        else:
-            water_gdf = ox.features_from_place(self.location_name, tags)
-            
-        # Фильтруем только полигоны и линии
-        water_gdf = water_gdf[water_gdf.geometry.type.isin(['Polygon', 'MultiPolygon', 'LineString', 'MultiLineString'])]
-        return water_gdf
 
     def get_land_use(self, boundary_poly=None) -> gpd.GeoDataFrame:
         """
         Загрузка данных о типах землепользования (Land Use).
         """
-        print("Загрузка данных землепользования (Land Use)...")
-        tags = {'landuse': True}
+        print("Загрузка данных землепользования (Land Use и Природа)...")
+        tags = {'landuse': True, 'natural': ['wood', 'water'], 'water': True}
         
         if boundary_poly is not None:
             lu_gdf = ox.features_from_polygon(boundary_poly, tags)
@@ -75,8 +40,16 @@ class OSMLoader:
         """
         Загрузка зданий и инфраструктурных объектов для атрибутирования блоков.
         """
-        print("Загрузка сервисов и зданий (Amenities & Buildings)...")
-        tags = {'amenity': True, 'building': True, 'leisure': True}
+        print("Загрузка объектов для классификации (Еда, Жилье, Транспорт)...")
+        tags = {
+            'amenity': True, 
+            'building': True, 
+            'leisure': True,
+            'tourism': True,
+            'highway': ['bus_stop'],
+            'public_transport': True,
+            'railway': ['station', 'halt']
+        }
         
         if boundary_poly is not None:
             amenities_gdf = ox.features_from_polygon(boundary_poly, tags)
@@ -85,20 +58,3 @@ class OSMLoader:
             
         return amenities_gdf
 
-    def get_railways(self, boundary_poly=None) -> gpd.GeoDataFrame:
-        """
-        Загрузка железнодорожной инфраструктуры (линейные объекты).
-        Может использоваться как дополнительный физический барьер при нарезке блоков.
-        """
-        print("Загрузка железнодорожной сети (Railways)...")
-        tags = {"railway": True}
-
-        if boundary_poly is not None:
-            rail_gdf = ox.features_from_polygon(boundary_poly, tags)
-        else:
-            rail_gdf = ox.features_from_place(self.location_name, tags)
-
-        rail_gdf = rail_gdf[
-            rail_gdf.geometry.type.isin(["LineString", "MultiLineString"])
-        ]
-        return rail_gdf
