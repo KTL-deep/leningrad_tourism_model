@@ -127,9 +127,27 @@ def run_stage2_ahp(
 
     output_csv.parent.mkdir(parents=True, exist_ok=True)
     output_geojson.parent.mkdir(parents=True, exist_ok=True)
-    score_df.to_csv(output_csv, index=False, encoding="utf-8-sig")
-    with open(output_geojson, "w", encoding="utf-8") as f:
-        json.dump(blocks_geojson, f, ensure_ascii=False)
+    
+    import datetime
+    ts = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+    
+    try:
+        score_df.to_csv(output_csv, index=False, encoding="utf-8-sig")
+    except Exception as e:
+        alt_csv = output_csv.parent / f"{output_csv.stem}_locked_{ts}.csv"
+        print(f"⚠️  Не удалось перезаписать {output_csv} ({e}). Пишем в {alt_csv}")
+        score_df.to_csv(alt_csv, index=False, encoding="utf-8-sig")
+        output_csv = alt_csv
+        
+    try:
+        with open(output_geojson, "w", encoding="utf-8") as f:
+            json.dump(blocks_geojson, f, ensure_ascii=False)
+    except Exception as e:
+        alt_json = output_geojson.parent / f"{output_geojson.stem}_locked_{ts}.geojson"
+        print(f"⚠️  Не удалось перезаписать {output_geojson} ({e}). Пишем в {alt_json}")
+        with open(alt_json, "w", encoding="utf-8") as f:
+            json.dump(blocks_geojson, f, ensure_ascii=False)
+        output_geojson = alt_json
 
     print(f"AHP stage 2 completed: {len(df_blocks)} blocks processed")
     print(f"Constants: {constants_path}")

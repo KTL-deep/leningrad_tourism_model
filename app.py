@@ -39,6 +39,25 @@ def load_data():
         gdf['forest_share'] = (gdf['forest_share'] * 100).round(1).astype(str) + "%"
         gdf['attractiveness_score'] = gdf['attractiveness_score'].round(4)
         
+        # ОСТАВЛЯЕМ ТОЛЬКО НУЖНЫЕ ДЛЯ КАРТЫ КОЛОНКИ
+        # Это предотвращает "TypeError: Object of type Timestamp is not JSON serializable"
+        # и кардинально ускоряет передачу GeoJSON в браузер (отбрасываем 70+ лишних колонок OSM)
+        keep_cols = [
+            'block_id', 
+            'dominant_landuse', 
+            'attractiveness_rank', 
+            'attractiveness_score', 
+            'accommodation_count', 
+            'food_count', 
+            'transport_count', 
+            'forest_share',
+            'geometry'
+        ]
+        
+        # Проверяем, что колонки существуют в датафрейме, чтобы не вызвать ошибку KeyError
+        existing_cols = [c for c in keep_cols if c in gdf.columns]
+        gdf = gdf[existing_cols]
+        
         return gdf
     except Exception as e:
         st.error(f"Ошибка загрузки данных: {e}. Пожалуйста, запустите main.py для генерации файла.")

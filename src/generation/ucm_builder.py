@@ -167,7 +167,10 @@ class UCMBuilder:
         if self.blocks.crs != landuse_gdf.crs:
             landuse_gdf = landuse_gdf.to_crs(self.blocks.crs)
 
-        intersections = gpd.overlay(self.blocks, landuse_gdf, how='intersection', keep_geom_type=False)
+        # Передаем только block_id и geometry для избежания конфликта одинаковых имен колонок
+        # (Например, если Fallback сгенерировал блоки из landuse_gdf, у блоков уже есть колонка landuse)
+        blocks_lite = self.blocks[['block_id', 'geometry']].copy()
+        intersections = gpd.overlay(blocks_lite, landuse_gdf, how='intersection', keep_geom_type=False)
         if intersections.empty:
             return
 
@@ -204,6 +207,8 @@ class UCMBuilder:
             dominant_lu = intersections.loc[idx, ['block_id', 'landuse']]
             dominant_lu.rename(columns={'landuse': 'dominant_landuse'}, inplace=True)
             self.blocks = self.blocks.merge(dominant_lu, on='block_id', how='left')
+        elif 'dominant_landuse' not in self.blocks.columns:
+            self.blocks['dominant_landuse'] = "Неизвестно"
 
     def get_ucm(self) -> gpd.GeoDataFrame:
         """

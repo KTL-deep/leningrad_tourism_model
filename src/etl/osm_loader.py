@@ -29,7 +29,11 @@ class OSMLoader:
         tags = {'landuse': True, 'natural': ['wood', 'water'], 'water': True}
         
         if boundary_poly is not None:
-            lu_gdf = ox.features_from_polygon(boundary_poly, tags)
+            # ОПТИМИЗАЦИЯ: используем envelope (Bounding Box) для запроса к OSM. 
+            # Сложные границы городов (как Павловск) заставляют Overpass API виснуть намертво. 
+            # А точная обрезка в любом случае произойдет в генераторе блоков локально и быстро.
+            query_poly = boundary_poly.envelope
+            lu_gdf = ox.features_from_polygon(query_poly, tags)
         else:
             lu_gdf = ox.features_from_place(self.location_name, tags)
             
@@ -52,7 +56,9 @@ class OSMLoader:
         }
         
         if boundary_poly is not None:
-            amenities_gdf = ox.features_from_polygon(boundary_poly, tags)
+            # ОПТИМИЗАЦИЯ: envelope для избежания Timeout-ов серверов OSM
+            query_poly = boundary_poly.envelope
+            amenities_gdf = ox.features_from_polygon(query_poly, tags)
         else:
             amenities_gdf = ox.features_from_place(self.location_name, tags)
             
