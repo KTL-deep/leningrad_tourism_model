@@ -22,8 +22,11 @@ import geopandas as gpd
 
 from src.etl.osm_loader import OSMLoader
 from src.etl.gis_loader import GISLoader
-from src.generation.blocks_generator import CityBlocksGenerator
+from src.generation.topological_generator import TopologicalGenerator
 from src.generation.ucm_builder import UCMBuilder
+import iduedu
+import pandas as pd
+import numpy as np
 
 def _safe_export(gdf: gpd.GeoDataFrame, path: str) -> None:
     if gdf is None or getattr(gdf, "empty", True):
@@ -46,26 +49,24 @@ def _safe_export(gdf: gpd.GeoDataFrame, path: str) -> None:
         print(f"⚠️  Не удалось перезаписать {path} (файл занят). Пишем в {alt_path}")
         gdf.to_file(alt_path, driver="GeoJSON")
 
-def generate_ucm(region_name: str, output_path: str = "data/processed/ucm_blocks.geojson"):
+def generate_ucm(region_names: list, output_path: str = "data/processed/ucm_blocks.geojson"):
     """
     Главный пайплайн генерации UCM.
-    :param region_name: Название региона (например "Siversky, Leningrad Oblast, Russia")
+    :param region_names: Список названий регионов (например ["Пушкинский район, Санкт-Петербург", "Гатчинский район, Ленинградская область"])
     :param output_path: Путь для сохранения итогового слоя блоков
     """
-    print(f"=== Запуск сборки UCM для {region_name} ===")
+    import time
+    start_time = time.time()
+    print(f"=== Запуск сборки UCM для {region_names} ===")
     
     # 1. Загрузка данных
-    osm = OSMLoader(location_name=region_name)
+    osm = OSMLoader(locations=region_names)
     gis = GISLoader(data_dir="data/raw")
     
     # Получаем базовую геометрию (границы)
     boundary_gdf = osm.get_boundary()
     _safe_export(boundary_gdf, "data/processed/osm/boundary.geojson")
     
-    # Загружаем кадастровые участки и кварталы
-    cadastre_gdf = gis.load_cadastral_data("cadastre.geojson")
-    _safe_export(cadastre_gdf, "data/processed/gis/cadastre.geojson")
-
     # Дополнительные слои для атрибутирования
     try:
         land_use_gdf = osm.get_land_use()
@@ -84,16 +85,12 @@ def generate_ucm(region_name: str, output_path: str = "data/processed/ucm_blocks
     oopt_gdf = gis.load_protected_areas()
     _safe_export(oopt_gdf, "data/processed/gis/oopt.geojson")
 
-    # 2. Генерация блоков (каскадная генерация: Кадастр -> Landuse -> Сетка)
-    generator = CityBlocksGenerator(boundary_gdf=boundary_gdf)
-    blocks_gdf = generator.generate_blocks(
-        cadastre_gdf=cadastre_gdf,
-        landuse_gdf=land_use_gdf,
-        min_area_m2=10.0,
-        grid_cell_size=50.0
-    )
-    
-    # 3. Атрибутирование блоков (UCM)
+    # 2. Топологическая генерация блоков (Этап 2)
+    generator = TopologicalGenerator(boundary_gdf=boundary_gdf)
+    blocks_gdf = generator.generate_blocks(min_area_m2=500.0)
+    _safe_export(blocks_gdf, "data/processed/topological_blocks.geojson")
+
+    # 3. Атрибутирование блоков (UCM) (Этап 3 - часть старого кода)
     builder = UCMBuilder(blocks_gdf=blocks_gdf)
     builder.attribute_land_use(landuse_gdf=land_use_gdf)
     builder.attribute_amenities(amenities_gdf=amenities_gdf)
@@ -103,23 +100,54 @@ def generate_ucm(region_name: str, output_path: str = "data/processed/ucm_blocks
     # 4. Сохранение
     builder.export_to_geojson(filepath=output_path)
     print(f"=== Генерация UCM успешно завершена. Файл: {output_path} ===")
-    
-    # 5. Сценарное математическое взвешивание AHP (Шаг 3)
-    try:
-        from src.analysis.ahp import run_stage2_ahp
-        from pathlib import Path
-        print("\n=== Запуск сценарного взвешивания (AHP) ===")
-        run_stage2_ahp(
-            blocks_path=Path(output_path),
-            constants_path=Path("configs/ahp_constants.json"),
-            output_csv=Path("data/processed/ahp_block_scores.csv"),
-            output_geojson=Path("data/processed/ucm_blocks_with_attractiveness.geojson")
+
+    # 5. Матрица доступности (Этап 3)
+    print("\n=== Старт расчета матрицы транспортной доступности ===")
+    import warnings
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        # iduedu ожидает полигон в EPSG:4326
+        boundary_poly_4326 = boundary_gdf.to_crs(epsg=4326).unary_union
+        
+        # Для ускорения расчетов и избежания блокировок Overpass API (406 Not Acceptable),
+        # мы используем автомобильный граф (Drive Graph) в качестве базового.
+        print("Построение графа дорожной сети (iduedu.get_drive_graph)...")
+        intermodal_graph = iduedu.get_drive_graph(polygon=boundary_poly_4326)
+        graph_crs = intermodal_graph.graph.get('crs', 4326)
+        
+        # Центроиды блоков для расчета матрицы
+        blocks_for_matrix = builder.get_ucm().copy()
+        if not blocks_for_matrix.crs.is_projected:
+            blocks_for_matrix = blocks_for_matrix.to_crs(blocks_for_matrix.estimate_utm_crs())
+        blocks_for_matrix['geometry'] = blocks_for_matrix.geometry.centroid
+        blocks_for_matrix = blocks_for_matrix.to_crs(graph_crs)
+        
+        print("Расчет матрицы доступности (get_adj_matrix_gdf_to_gdf)...")
+        # Вычисляем матрицу между всеми блоками
+        acc_matrix = iduedu.get_adj_matrix_gdf_to_gdf(
+            gdf_from=blocks_for_matrix,
+            gft_to=blocks_for_matrix,
+            nx_graph=intermodal_graph,
+            weight='time_min',
+            dtype=np.float32
         )
-    except Exception as e:
-        print(f"⚠️ Ошибка при расчете AHP: {e}")
+        
+        # Сохраняем матрицу доступности
+        matrix_path = "data/processed/accessibility_matrix.parquet"
+        acc_matrix.to_parquet(matrix_path)
+        print(f"=== Матрица доступности успешно сохранена: {matrix_path} ===")
+
+    print("\n[TODO] Сценарное взвешивание и оптимизация будут интегрированы на следующих этапах.\n")
+    
+    elapsed_time = time.time() - start_time
+    print(f"=== Выполнение скрипта завершено. Общее время: {elapsed_time:.2f} секунд ===")
+    return
 
 if __name__ == "__main__":
-    # Для теста будем использовать небольшой населенный пункт в Ленинградской области
-    # чтобы пайплайн отработал быстро
-    test_region = "Рощино, Ленинградская область, Россия"
-    generate_ucm(region_name=test_region)
+    # Тестируем на двух смежных небольших населенных пунктах для быстрого прогона,
+    # сохраняя логику межрегионального взаимодействия.
+    test_regions = [
+        "Рощино, Ленинградская область, Россия",
+        "Зеленогорск, Санкт-Петербург, Россия"
+    ]
+    generate_ucm(region_names=test_regions)

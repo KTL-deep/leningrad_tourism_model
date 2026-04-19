@@ -50,6 +50,7 @@ htmlcov/
 # --- Custom / Debug ---
 cache/
 *.txt
+!requirements.txt
 
 # --- Локальная документация и планы (не для репозитория) ---
 docs/

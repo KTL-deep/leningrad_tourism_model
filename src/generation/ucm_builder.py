@@ -32,11 +32,7 @@ class UCMBuilder:
         if self.blocks.crs != amenities_gdf.crs:
             amenities_gdf = amenities_gdf.to_crs(self.blocks.crs)
 
-        # Центроиды, чтобы избежать дублирования на границах
-        amenities_pts = amenities_gdf.copy()
-        amenities_pts['geometry'] = amenities_pts.geometry.centroid
-
-        joined = gpd.sjoin(amenities_pts, self.blocks, how='inner', predicate='within')
+        joined = gpd.sjoin(amenities_gdf, self.blocks, how='inner', predicate='within')
         
         if joined.empty:
             self.blocks['amenity_count'] = 0
@@ -181,7 +177,12 @@ class UCMBuilder:
         if intersections.empty:
             return
             
-        intersections['intersect_area'] = intersections.geometry.area
+        utm_crs = self.blocks.estimate_utm_crs()
+        if not intersections.crs.is_projected:
+            intersections_proj = intersections.to_crs(utm_crs)
+            intersections['intersect_area'] = intersections_proj.geometry.area
+        else:
+            intersections['intersect_area'] = intersections.geometry.area
         
         # Семантика: Доля леса (forest_share)
         forest_mask = pd.Series(False, index=intersections.index)
@@ -198,7 +199,8 @@ class UCMBuilder:
         else:
             self.blocks['forest_area_m2'] = 0.0
             
-        self.blocks['forest_share'] = (self.blocks['forest_area_m2'] / self.blocks.geometry.area).fillna(0.0)
+        blocks_proj_area = self.blocks.to_crs(utm_crs).geometry.area if not self.blocks.crs.is_projected else self.blocks.geometry.area
+        self.blocks['forest_share'] = (self.blocks['forest_area_m2'] / blocks_proj_area).fillna(0.0)
         
         # Доминирующее землепользование
         if 'landuse' in intersections.columns:
@@ -226,7 +228,7 @@ class UCMBuilder:
             return
         os.makedirs(os.path.dirname(filepath), exist_ok=True)
         print(f"Экспорт UCM модели в {filepath}...")
-        export_gdf = self.blocks
+        export_gdf = self.blocks.copy()
         # GeoJSON удобнее хранить в EPSG:4326 для QGIS/kepler.gl
         try:
             if export_gdf.crs is not None and export_gdf.crs.to_epsg() != 4326:
@@ -237,7 +239,6 @@ class UCMBuilder:
             export_gdf.to_file(filepath, driver="GeoJSON")
         except PermissionError:
             from datetime import datetime
-
             ts = datetime.now().strftime("%Y%m%d-%H%M%S")
             alt_path = f"{filepath}.locked-{ts}.geojson"
             print(f"⚠️  Не удалось перезаписать {filepath} (файл занят). Пишем в {alt_path}")
