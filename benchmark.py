@@ -148,7 +148,7 @@ def run_benchmark(region_names: list, output_path: str = "data/processed/ucm_blo
                 matrix_path = "data/processed/accessibility_matrix.parquet"
                 acc_matrix.to_parquet(matrix_path)
 
-    print("\n[TODO] Сценарное взвешивание и оптимизация будут интегрированы на следующих этапах.\n")
+    print("\n[TODO] Сценарное взвешивание и оптимизация будут интегрированы на следующих этапах...\n")
 
     # Вывод финального отчета
     profiler.print_report()
