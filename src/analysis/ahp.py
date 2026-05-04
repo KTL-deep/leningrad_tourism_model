@@ -48,19 +48,9 @@ LIMITING_FACTORS = {"Заболоченность", "Заболевания", "�
 def _load_constants(path: Path) -> dict:
     with open(path, encoding="utf-8") as f:
         constants = json.load(f)
-    if "subfactor_global_weights" not in constants:
-        raise ValueError("No 'subfactor_global_weights' in constants JSON")
+    if "scenarios" not in constants:
+        raise ValueError("No 'scenarios' in constants JSON")
     return constants
-
-
-def _validate_consistency(constants: dict) -> None:
-    consistency = constants.get("consistency", {})
-    main = consistency.get("main_criteria", {})
-    if main and not main.get("is_consistent", False):
-        raise ValueError("Main criteria matrix is not consistent")
-    for group_name, metrics in consistency.get("subgroups", {}).items():
-        if not metrics.get("is_consistent", False):
-            raise ValueError(f"Subgroup matrix is not consistent: {group_name}")
 
 
 def _minmax(series: pd.Series) -> pd.Series:
@@ -79,9 +69,7 @@ def run_stage2_ahp(
     output_geojson: Path,
 ) -> None:
     constants = _load_constants(constants_path)
-    _validate_consistency(constants)
 
-    weights = constants["subfactor_global_weights"]
     with open(blocks_path, encoding="utf-8") as f:
         blocks_geojson = json.load(f)
 
@@ -92,38 +80,55 @@ def run_stage2_ahp(
         df_blocks["block_id"] = range(len(df_blocks))
     df_blocks["block_id"] = pd.to_numeric(df_blocks["block_id"], errors="coerce").fillna(-1).astype(int)
 
-    missing_cols = []
     score_df = pd.DataFrame({"block_id": df_blocks["block_id"]})
-
-    for subfactor, weight in weights.items():
+    
+    # Pre-calculate normalized values for all subfactors present in constants
+    all_subfactors = set()
+    for scen_data in constants["scenarios"].values():
+        for lu_data in scen_data.values():
+            all_subfactors.update(lu_data.keys())
+            
+    normalized_data = {}
+    missing_cols = set()
+    for subfactor in all_subfactors:
         src_col = SUBFACTOR_TO_COLUMN.get(subfactor)
         if src_col is None or src_col not in df_blocks.columns:
             raw = pd.Series(0.0, index=df_blocks.index)
-            missing_cols.append((subfactor, src_col))
+            missing_cols.add((subfactor, src_col))
         else:
             raw = pd.to_numeric(df_blocks[src_col], errors="coerce").fillna(0.0)
 
         normalized = _minmax(raw)
         if subfactor in LIMITING_FACTORS:
             normalized = 1.0 - normalized
+        normalized_data[subfactor] = normalized
+        
+    # Calculate scores for each scenario and land use type
+    scenarios = constants["scenarios"]
+    result_lookup = pd.DataFrame({"block_id": df_blocks["block_id"]}).set_index("block_id")
+    
+    for scenario_name, lu_dict in scenarios.items():
+        scenario_slug = scenario_name.replace("-", "_").replace(" ", "_")
+        for lu_type, weights in lu_dict.items():
+            lu_slug = lu_type.replace("/", "_").replace(" ", "_")
+            
+            score_series = pd.Series(0.0, index=df_blocks.index)
+            for subfactor, weight in weights.items():
+                score_series += normalized_data[subfactor] * float(weight)
+                
+            col_name = f"S_ik_{scenario_slug}_{lu_slug}"
+            score_df[col_name] = score_series
+            
+            # Save to lookup
+            result_lookup[col_name] = score_series.values
 
-        score_df[f"raw__{subfactor}"] = raw
-        score_df[f"norm__{subfactor}"] = normalized
-        score_df[f"w__{subfactor}"] = normalized * float(weight)
-
-    weighted_cols = [c for c in score_df.columns if c.startswith("w__")]
-    score_df["attractiveness_score"] = score_df[weighted_cols].sum(axis=1)
-    score_df["attractiveness_rank"] = score_df["attractiveness_score"].rank(
-        method="dense", ascending=False
-    ).astype(int)
-
-    result_lookup = score_df.set_index("block_id")[["attractiveness_score", "attractiveness_rank"]]
+    # Assign scores back to GeoJSON features
     for feat in features:
         props = feat.setdefault("properties", {})
         block_id = int(pd.to_numeric(props.get("block_id", -1), errors="coerce"))
         if block_id in result_lookup.index:
-            props["attractiveness_score"] = float(result_lookup.loc[block_id, "attractiveness_score"])
-            props["attractiveness_rank"] = int(result_lookup.loc[block_id, "attractiveness_rank"])
+            for col in result_lookup.columns:
+                props[col] = float(result_lookup.loc[block_id, col])
 
     output_csv.parent.mkdir(parents=True, exist_ok=True)
     output_geojson.parent.mkdir(parents=True, exist_ok=True)
@@ -161,7 +166,7 @@ def run_stage2_ahp(
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Stage 2 AHP scoring for city blocks"
+        description="Stage 2 AHP scoring for city blocks with scenarios and WLC"
     )
     parser.add_argument(
         "--blocks",
@@ -176,12 +181,12 @@ def main() -> None:
     parser.add_argument(
         "--output-csv",
         default="data/processed/ahp_block_scores.csv",
-        help="Output CSV with raw/norm/weighted values",
+        help="Output CSV with WLC scores",
     )
     parser.add_argument(
         "--output-geojson",
         default="data/processed/ucm_blocks_with_attractiveness.geojson",
-        help="Output GeoJSON with attractiveness fields",
+        help="Output GeoJSON with S_ik score fields",
     )
     args = parser.parse_args()
 

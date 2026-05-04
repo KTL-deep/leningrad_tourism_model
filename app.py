@@ -2,7 +2,6 @@ import streamlit as st
 import geopandas as gpd
 import folium
 from streamlit_folium import st_folium
-import branca.colormap as cm
 import json
 
 # Конфигурация страницы должна быть первым вызовом
@@ -21,40 +20,41 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
+# Цветовая палитра для типов землепользования
+LANDUSE_COLORS = {
+    "Парк/Рекреация": "#2ca02c",      # Зеленый
+    "Жилая застройка": "#8c564b",     # Коричневый
+    "Коммерция/Услуги": "#ff7f0e",    # Оранжевый
+    "Инфраструктурный Хаб": "#1f77b4" # Синий
+}
+
 @st.cache_data
 def load_data():
-    file_path = "data/processed/ucm_blocks_with_attractiveness.geojson"
+    file_path = "data/processed/ucm_blocks_optimized.geojson"
     try:
         gdf = gpd.read_file(file_path)
         # Принудительно приводим к EPSG:4326 для Folium
         if gdf.crs and gdf.crs.to_epsg() != 4326:
             gdf = gdf.to_crs(epsg=4326)
         
-        # Убираем возможные артефакты, где атрибуты могут быть None
         gdf['dominant_landuse'] = gdf['dominant_landuse'].fillna("Неизвестно")
-        gdf['attractiveness_score'] = gdf['attractiveness_score'].fillna(0.0)
-        gdf['attractiveness_rank'] = gdf['attractiveness_rank'].fillna(9999).astype(int)
-        
-        # Форматирование чисел для красивого Tooltip
-        gdf['forest_share'] = (gdf['forest_share'] * 100).round(1).astype(str) + "%"
-        gdf['attractiveness_score'] = gdf['attractiveness_score'].round(4)
+        gdf['forest_share'] = (gdf['forest_share'].fillna(0) * 100).round(1).astype(str) + "%"
         
         # ОСТАВЛЯЕМ ТОЛЬКО НУЖНЫЕ ДЛЯ КАРТЫ КОЛОНКИ
-        # Это предотвращает "TypeError: Object of type Timestamp is not JSON serializable"
-        # и кардинально ускоряет передачу GeoJSON в браузер (отбрасываем 70+ лишних колонок OSM)
         keep_cols = [
             'block_id', 
             'dominant_landuse', 
-            'attractiveness_rank', 
-            'attractiveness_score', 
             'accommodation_count', 
             'food_count', 
             'transport_count', 
             'forest_share',
-            'geometry'
+            'geometry',
+            # Сценарные колонки
+            'Target_LandUse_Экоцентризм', 'Capacity_Экоцентризм', 'S_ik_Экоцентризм_Парк_Рекреация', 'S_ik_Экоцентризм_Жилая_застройка', 'S_ik_Экоцентризм_Коммерция_Услуги', 'S_ik_Экоцентризм_Инфраструктурный_Хаб',
+            'Target_LandUse_Историко-центризм', 'Capacity_Историко-центризм', 'S_ik_Историко_центризм_Парк_Рекреация', 'S_ik_Историко_центризм_Жилая_застройка', 'S_ik_Историко_центризм_Коммерция_Услуги', 'S_ik_Историко_центризм_Инфраструктурный_Хаб',
+            'Target_LandUse_Инфраструктурный', 'Capacity_Инфраструктурный', 'S_ik_Инфраструктурный_Парк_Рекреация', 'S_ik_Инфраструктурный_Жилая_застройка', 'S_ik_Инфраструктурный_Коммерция_Услуги', 'S_ik_Инфраструктурный_Инфраструктурный_Хаб'
         ]
         
-        # Проверяем, что колонки существуют в датафрейме, чтобы не вызвать ошибку KeyError
         existing_cols = [c for c in keep_cols if c in gdf.columns]
         gdf = gdf[existing_cols]
         
@@ -65,7 +65,7 @@ def load_data():
 
 def main():
     st.title("🗺️ Интерактивная модель: Туристический потенциал территорий")
-    st.markdown("Предиктивная визуализация (Suitability Analysis) городских блоков по методу AHP (Шаг 3).")
+    st.markdown("Предиктивная визуализация оптимального землепользования (Target Land Use) с применением алгоритма Simulated Annealing.")
     
     gdf = load_data()
     if gdf is None or gdf.empty:
@@ -77,27 +77,34 @@ def main():
     total_blocks = len(gdf)
     st.sidebar.metric("Всего полигонов (блоков):", total_blocks)
     
-    st.sidebar.markdown("### Фильтрация блоков")
-    top_n = st.sidebar.slider(
-        "Отображать только ТОП-N лучших блоков:",
-        min_value=1,
-        max_value=total_blocks,
-        value=total_blocks,
-        step=1
+    scenario = st.sidebar.selectbox(
+        "Выберите сценарий развития:",
+        ["Экоцентризм", "Историко-центризм", "Инфраструктурный"]
     )
     
-    # Фильтруем данные: сортируем по рангу
-    filtered_gdf = gdf.sort_values(by="attractiveness_rank", ascending=True).head(top_n)
-    
     st.sidebar.markdown("---")
-    st.sidebar.info(
-        "**Цветовая палитра: YlOrRd**\n\n"
-        "🟡 Желтый — низкий потенциал\n\n"
-        "🔴 Красный — высокий приоритет для инвестиций"
+    st.sidebar.markdown("### Легенда (Target Land Use)")
+    for lu, color in LANDUSE_COLORS.items():
+        st.sidebar.markdown(f'<div style="display:flex; align-items:center;"><div style="width:20px; height:20px; background-color:{color}; border-radius:4px; margin-right:10px;"></div><b>{lu}</b></div>', unsafe_allow_html=True)
+
+    # Подготавливаем данные для выбранного сценария
+    scenario_slug = scenario.replace("-", "_").replace(" ", "_")
+    target_col = f"Target_LandUse_{scenario}"
+    capacity_col = f"Capacity_{scenario}"
+    
+    # Копируем нужные колонки в общие имена для фолиума
+    display_gdf = gdf.copy()
+    display_gdf['Current_Target_LandUse'] = display_gdf[target_col]
+    display_gdf['Current_Capacity'] = display_gdf[capacity_col].astype(str) + " чел."
+    
+    # Извлекаем максимальный балл пригодности для выбранного типа
+    display_gdf['Max_Suitability'] = display_gdf.apply(
+        lambda row: round(row.get(f"S_ik_{scenario_slug}_{row[target_col].replace('/', '_').replace(' ', '_')}", 0.0), 4),
+        axis=1
     )
 
     # --- КАРТА FOLIUM ---
-    bounds = filtered_gdf.total_bounds
+    bounds = display_gdf.total_bounds
     center_lat = (bounds[1] + bounds[3]) / 2
     center_lon = (bounds[0] + bounds[2]) / 2
 
@@ -108,21 +115,11 @@ def main():
         tiles="CartoDB dark_matter"
     )
 
-    min_score = filtered_gdf['attractiveness_score'].min()
-    max_score = filtered_gdf['attractiveness_score'].max()
-    
-    # Цветовая карта от желтого к красному (YlOrRd_09)
-    # Если все score одинаковые (бывает при сбоях), даем дефолтные края
-    if min_score == max_score:
-        min_score, max_score = 0.0, 1.0
-        
-    colormap = cm.linear.YlOrRd_09.scale(min_score, max_score)
-    colormap.caption = 'Туристическая привлекательность (AHP Score)'
-
     def style_function(feature):
-        score = feature['properties'].get('attractiveness_score', 0)
+        target_lu = feature['properties'].get('Current_Target_LandUse', "Неизвестно")
+        color = LANDUSE_COLORS.get(target_lu, "#808080")
         return {
-            'fillColor': colormap(score),
+            'fillColor': color,
             'color': '#ffffff',  # белые границы
             'weight': 0.5,
             'fillOpacity': 0.75
@@ -130,36 +127,36 @@ def main():
 
     def highlight_function(feature):
         return {
-            'fillColor': '#00ffff',  # неоново-синий при наведении
-            'color': '#00ffff',
+            'fillColor': '#ffffff',  # Белый при наведении
+            'color': '#ffffff',
             'weight': 2,
             'fillOpacity': 0.9
         }
 
     folium.GeoJson(
-        filtered_gdf,
+        display_gdf,
         style_function=style_function,
         highlight_function=highlight_function,
         tooltip=folium.GeoJsonTooltip(
             fields=[
                 'block_id', 
-                'dominant_landuse', 
-                'attractiveness_rank', 
-                'attractiveness_score', 
+                'Current_Target_LandUse', 
+                'Max_Suitability', 
+                'Current_Capacity', 
+                'dominant_landuse',
                 'accommodation_count', 
                 'food_count', 
-                'transport_count', 
-                'forest_share'
+                'transport_count'
             ],
             aliases=[
                 '🆔 ID Блока:', 
-                '🏙️ Землепользование:', 
-                '🏆 Рейтинг (Rank):', 
-                '📊 Балл (Score):', 
+                '🎯 Предписанный тип (Target):', 
+                '📈 Балл пригодности (S_ik):', 
+                '⚡ Расчетная емкость (Capacity):', 
+                '🏙️ Текущее землепользование:',
                 '🛏️ Места размещения:', 
                 '🍽️ Точки питания:', 
-                '🚌 Остановки/Станции:', 
-                '🌲 Доля леса:'
+                '🚌 Транспорт:'
             ],
             labels=True,
             sticky=False,
@@ -176,10 +173,7 @@ def main():
         )
     ).add_to(m)
 
-    colormap.add_to(m)
-
     # Отрисовка в веб-интерфейсе
-    # Конфигурируем высоту и отключаем возвращение объектов (returned_objects=[]) для производительности
     st_folium(m, width="100%", height=700, returned_objects=[])
 
 if __name__ == "__main__":

@@ -137,7 +137,32 @@ def generate_ucm(region_names: list, output_path: str = "data/processed/ucm_bloc
         acc_matrix.to_parquet(matrix_path)
         print(f"=== Матрица доступности успешно сохранена: {matrix_path} ===")
 
-    print("\n[TODO] Сценарное взвешивание и оптимизация будут интегрированы на следующих этапах.\n")
+    # 6. Сценарное взвешивание AHP (Этап 4)
+    print("\n=== Старт сценарного взвешивания (AHP) ===")
+    from src.analysis.ahp import run_stage2_ahp
+    from pathlib import Path
+    
+    ahp_csv_out = Path("data/processed/ahp_block_scores.csv")
+    ahp_geojson_out = Path("data/processed/ucm_blocks_with_attractiveness.geojson")
+    
+    run_stage2_ahp(
+        blocks_path=Path(output_path),
+        constants_path=Path("configs/ahp_constants.json"),
+        output_csv=ahp_csv_out,
+        output_geojson=ahp_geojson_out
+    )
+    
+    # 7. Глобальная оптимизация (Этап 5)
+    print("\n=== Старт пространственной оптимизации (Simulated Annealing) ===")
+    from src.analysis.optimizer import run_optimization
+    
+    opt_geojson_out = Path("data/processed/ucm_blocks_optimized.geojson")
+    run_optimization(
+        blocks_path=ahp_geojson_out,
+        acc_matrix_path=Path(matrix_path),
+        output_geojson=opt_geojson_out,
+        max_iter=50000
+    )
     
     elapsed_time = time.time() - start_time
     print(f"=== Выполнение скрипта завершено. Общее время: {elapsed_time:.2f} секунд ===")

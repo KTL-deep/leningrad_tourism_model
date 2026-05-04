@@ -32,7 +32,7 @@ def _simple_sjoin(points_gdf: gpd.GeoDataFrame, polys_gdf: gpd.GeoDataFrame, how
     return gpd.GeoDataFrame(rows, crs=points_gdf.crs)
 
 
-def _simple_overlay(blocks_gdf: gpd.GeoDataFrame, landuse_gdf: gpd.GeoDataFrame, how: str):
+def _simple_overlay(blocks_gdf: gpd.GeoDataFrame, landuse_gdf: gpd.GeoDataFrame, how: str, keep_geom_type: bool = True):
     if how != "intersection":
         raise ValueError("This simple test overlay supports only how='intersection'")
 
@@ -74,7 +74,7 @@ def test_attribute_amenities_counts(monkeypatch, blocks_gdf):
     builder.attribute_amenities(amenities)
     out = builder.get_ucm().sort_values("block_id")
 
-    counts = dict(zip(out["block_id"], out["amenity_count"]))
+    counts = dict(zip(out["block_id"], out["poi_count"]))
     assert counts[0] == 2
     assert counts[1] == 1
 
