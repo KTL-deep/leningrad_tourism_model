@@ -73,6 +73,20 @@ def load_data():
         st.error(f"Ошибка загрузки данных: {e}. Пожалуйста, запустите main.py для генерации файла.")
         return None
 
+@st.cache_data
+def load_roads():
+    file_path = "data/processed/drive_graph_edges.geojson"
+    try:
+        import os
+        if not os.path.exists(file_path):
+            return None
+        roads = gpd.read_file(file_path)
+        if roads.crs and roads.crs.to_epsg() != 4326:
+            roads = roads.to_crs(epsg=4326)
+        return roads
+    except Exception:
+        return None
+
 def main():
     st.title("🗺️ Parametric Model of Tourism Framework (TOK T)")
     st.markdown("Интерактивная DSS-система предиктивного мастер-планирования региона")
@@ -106,6 +120,9 @@ def main():
     counts = gdf[target_col].value_counts()
     for cat, count in counts.items():
         st.sidebar.progress(int(count/len(gdf)*100), text=f"{cat}: {count} блоков")
+
+    st.sidebar.markdown("### Визуализация")
+    show_roads = st.sidebar.toggle("🛣️ Транспортный граф (доступность)", value=False, help="Отобразить дорожную сеть, использованную для расчета матрицы доступности")
 
     st.sidebar.markdown("### Легенда")
     for lu, color in LANDUSE_COLORS.items():
@@ -149,6 +166,32 @@ def main():
         tiles="CartoDB dark_matter",
         control_scale=True
     )
+
+    if show_roads:
+        roads_gdf = load_roads()
+        if roads_gdf is not None and not roads_gdf.empty:
+            import branca.colormap as cm
+            
+            if 'time_min' in roads_gdf.columns:
+                # Градиент по времени в пути (чем меньше время, тем ярче/зеленее, чем больше - краснее)
+                colormap = cm.LinearColormap(colors=['#00ff00', '#ffff00', '#ff0000'], vmin=roads_gdf['time_min'].min(), vmax=roads_gdf['time_min'].max())
+                colormap.caption = "Время проезда (мин)"
+                m.add_child(colormap)
+                
+                def road_style(feature):
+                    val = feature['properties'].get('time_min', 0)
+                    return {'color': colormap(val), 'weight': 1.5, 'opacity': 0.8}
+            else:
+                def road_style(feature):
+                    return {'color': '#3388ff', 'weight': 1.5, 'opacity': 0.6}
+            
+            folium.GeoJson(
+                roads_gdf,
+                style_function=road_style,
+                name="Транспортный граф"
+            ).add_to(m)
+        else:
+            st.sidebar.warning("Файл графа дорог не найден. Сгенерируйте data/processed/drive_graph_edges.geojson через main.py.")
 
     def style_func(feature):
         lu = feature['properties'].get('Target_LU', "Неизвестно")

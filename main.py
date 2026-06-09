@@ -138,6 +138,12 @@ def generate_ucm(region_names: list, output_path: str = "data/processed/ucm_bloc
             intermodal_graph = iduedu.get_drive_graph(territory=boundary_poly_4326)
             graph_crs = intermodal_graph.graph.get('crs', 4326)
             
+            print("Экспорт транспортного графа для дашборда...")
+            import osmnx as ox
+            # iduedu.get_drive_graph возвращает nx.MultiDiGraph
+            edges = ox.graph_to_gdfs(intermodal_graph, nodes=False)
+            _safe_export(edges, "data/processed/drive_graph_edges.geojson")
+            
             # Центроиды блоков для расчета матрицы
             blocks_for_matrix = builder.get_ucm().copy()
             if not blocks_for_matrix.crs.is_projected:
@@ -209,9 +215,9 @@ def generate_ucm(region_names: list, output_path: str = "data/processed/ucm_bloc
 
 if __name__ == "__main__":
     # Пилотный полигон для валидации модели:
-    # Стык Пушкинского района (СПб) и Гатчинского района (ЛО)
+    # Сами города, а не целые районы, чтобы избежать таймаутов OSM и получить детальную сетку
     pilot_regions = [
-        "Пушкинский район, Санкт-Петербург, Россия",
-        "Гатчинский район, Ленинградская область, Россия"
+        "Пушкин, Санкт-Петербург, Россия",
+        "Гатчина, Ленинградская область, Россия"
     ]
     generate_ucm(region_names=pilot_regions)
