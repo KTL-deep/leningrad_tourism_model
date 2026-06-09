@@ -10,21 +10,19 @@ from tqdm import tqdm
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 
-# Синергия между типами застройки (чем выше значение, тем выгоднее их размещать рядом)
-# Индексы: 0: Парк, 1: Жилье, 2: Коммерция, 3: Хаб
+# Синергия между типами объектов ТОКТ
+# Индексы: 0: Хаб, 1: Точка притяжения, 2: Маршрут
 SYNERGY_MATRIX = np.array([
-    [-0.5,  1.0,  0.5,  0.1],  # 0: Парк/Рекреация
-    [ 1.0, -0.5,  1.0,  0.2],  # 1: Жилая застройка
-    [ 0.5,  1.0, -0.5,  1.0],  # 2: Коммерция/Услуги
-    [ 0.1,  0.2,  1.0, -0.5],  # 3: Инфраструктурный Хаб
+    [-0.5,  1.0,  0.5],  # 0: Опорные центры (Хабы)
+    [ 1.0, -0.2,  0.8],  # 1: Локальные точки притяжения
+    [ 0.5,  0.8, -0.5],  # 2: Линейные элементы (Маршруты)
 ])
 
-# Коэффициенты плотности для расчета Capacity (человек на гектар)
-DENSITY_FACTORS = {
-    "Парк/Рекреация": 100,
-    "Жилая застройка": 300,
-    "Коммерция/Услуги": 500,
-    "Инфраструктурный Хаб": 1000
+# Базовая обслуживающая способность (человек на гектар)
+BASE_CAPACITY_FACTORS = {
+    "Опорные центры (Хабы)": 2000,
+    "Локальные точки притяжения": 500,
+    "Линейные элементы (Маршруты)": 100
 }
 
 class SimulatedAnnealingOptimizer:
@@ -33,31 +31,36 @@ class SimulatedAnnealingOptimizer:
         s_ik_matrix: np.ndarray,
         acc_matrix: np.ndarray,
         land_use_types: list[str],
-        lambda_dist: float = 1.0
+        areas_ha: np.ndarray,
+        lambda_dist: float = 0.5,
+        lambda_cap: float = 1.0
     ):
         """
         Инициализация оптимизатора.
         :param s_ik_matrix: Матрица пригодности (N_blocks x K_land_uses)
         :param acc_matrix: Матрица транспортной доступности (N_blocks x N_blocks)
         :param land_use_types: Список названий типов использования
-        :param lambda_dist: Весовой коэффициент для функции пространственной синергии
+        :param areas_ha: Площади блоков в гектарах
+        :param lambda_dist: Вес пространственной синергии
+        :param lambda_cap: Вес штрафа за превышение емкости (Carrying Capacity)
         """
         self.s_ik = s_ik_matrix
         self.acc_matrix = acc_matrix
         self.n_blocks, self.k_uses = self.s_ik.shape
         self.land_use_types = land_use_types
+        self.areas_ha = areas_ha
         self.lambda_dist = lambda_dist
+        self.lambda_cap = lambda_cap
         
-        # Предрассчитываем матрицу обратных расстояний (утилит)
-        # Добавляем 1.0 к расстояниям, чтобы избежать деления на ноль 
-        # (внутри самого блока тоже может быть польза, но мы штрафуем одинаковые типы в SYNERGY)
         self.dist_utility = 1.0 / (self.acc_matrix + 1.0)
-        
-        # Обнуляем диагональ, чтобы не учитывать синергию блока с самим собой
         np.fill_diagonal(self.dist_utility, 0.0)
+        
+        # Расчет предельной экологической емкости (Placeholder для Carrying Capacity)
+        # В реальности зависит от okn_count, forest_share и т.д.
+        self.max_carrying_capacity = self.areas_ha * 1000.0 # 1000 чел/га как абсолютный предел
 
     def calculate_energy(self, state: np.ndarray) -> float:
-        """Полный расчет целевой функции для текущего состояния."""
+        """Полный расчет целевой функции."""
         # 1. Полезность S_ik
         utility_s_ik = np.sum(self.s_ik[np.arange(self.n_blocks), state])
         
@@ -67,14 +70,17 @@ class SimulatedAnnealingOptimizer:
             lu_i = state[i]
             synergies = SYNERGY_MATRIX[lu_i, state]
             utility_dist += np.sum(synergies * self.dist_utility[i, :])
-            
-        # Так как пары считаются дважды, делим на 2
         utility_dist /= 2.0
         
-        return utility_s_ik + self.lambda_dist * utility_dist
+        # 3. Штраф за превышение Carrying Capacity
+        current_loads = self.areas_ha * np.array([BASE_CAPACITY_FACTORS[self.land_use_types[i]] for i in state])
+        overload = np.maximum(0, current_loads - self.max_carrying_capacity)
+        penalty_cap = np.sum(overload) * 0.01 # Коэффициент штрафа
+            
+        return utility_s_ik + self.lambda_dist * utility_dist - self.lambda_cap * penalty_cap
 
     def _calculate_delta(self, state: np.ndarray, block_idx: int, new_lu: int) -> float:
-        """Быстрый расчет изменения целевой функции при изменении одного блока."""
+        """Быстрый расчет изменения целевой функции."""
         old_lu = state[block_idx]
         
         # Изменение S_ik
@@ -83,16 +89,17 @@ class SimulatedAnnealingOptimizer:
         # Изменение пространственной синергии
         old_synergy = SYNERGY_MATRIX[old_lu, state]
         new_synergy = SYNERGY_MATRIX[new_lu, state]
+        delta_dist = np.sum(new_synergy * self.dist_utility[block_idx, :]) - np.sum(old_synergy * self.dist_utility[block_idx, :])
         
-        # Исключаем влияние блока самого на себя (уже учтено обнулением диагонали dist_utility)
-        old_dist_util = np.sum(old_synergy * self.dist_utility[block_idx, :])
-        new_dist_util = np.sum(new_synergy * self.dist_utility[block_idx, :])
+        # Изменение штрафа емкости
+        old_load = self.areas_ha[block_idx] * BASE_CAPACITY_FACTORS[self.land_use_types[old_lu]]
+        new_load = self.areas_ha[block_idx] * BASE_CAPACITY_FACTORS[self.land_use_types[new_lu]]
         
-        delta_dist = new_dist_util - old_dist_util
+        old_overload = max(0, old_load - self.max_carrying_capacity[block_idx])
+        new_overload = max(0, new_load - self.max_carrying_capacity[block_idx])
+        delta_cap_penalty = (new_overload - old_overload) * 0.01
         
-        # Не делим на 2, потому что при изменении одного блока меняются связи (i, j) и (j, i), 
-        # а матрица dist_utility симметрична (или почти симметрична). Учтем это сполна.
-        return delta_s_ik + self.lambda_dist * delta_dist
+        return delta_s_ik + self.lambda_dist * delta_dist - self.lambda_cap * delta_cap_penalty
 
     def run(self, max_iter: int = 50000, temp_init: float = 10.0, temp_min: float = 0.01) -> tuple[np.ndarray, list[float]]:
         """Запуск алгоритма имитации отжига."""
@@ -138,9 +145,9 @@ class SimulatedAnnealingOptimizer:
 def calculate_capacity(area_m2: float, lu_type: str, s_ik_score: float) -> float:
     """Вычисление Capacity (обслуживающей мощности) блока."""
     area_ha = area_m2 / 10000.0
-    base_density = DENSITY_FACTORS.get(lu_type, 100)
+    base_density = BASE_CAPACITY_FACTORS.get(lu_type, 100)
     # Мощность масштабируется оценкой пригодности (S_ik) от 0 до 1
-    return area_ha * base_density * (s_ik_score + 0.1)  # Базовая мощность как минимум 10%
+    return area_ha * base_density * (s_ik_score + 0.1)
 
 def run_optimization(
     blocks_path: Path,
@@ -162,17 +169,16 @@ def run_optimization(
     if len(blocks_gdf) != acc_matrix.shape[0]:
         raise ValueError("Number of blocks does not match accessibility matrix size")
         
-    # Получаем площадь в метрической проекции (UTM) один раз
+    # Получаем площадь в гектарах
     if not blocks_gdf.crs.is_projected:
         utm_crs = blocks_gdf.estimate_utm_crs()
-        areas_m2 = blocks_gdf.to_crs(utm_crs).area
+        areas_ha = blocks_gdf.to_crs(utm_crs).area / 10000.0
     else:
-        areas_m2 = blocks_gdf.area
+        areas_ha = blocks_gdf.area / 10000.0
         
     for scenario in scenarios:
         logging.info(f"--- Processing scenario: {scenario} ---")
         scenario_slug = scenario.replace("-", "_").replace(" ", "_")
-        # Вытаскиваем все типы Land Use из колонок для заданного сценария
         prefix = f"S_ik_{scenario_slug}_"
         score_cols = [c for c in blocks_gdf.columns if c.startswith(prefix)]
         
@@ -180,9 +186,9 @@ def run_optimization(
             logging.warning(f"No S_ik columns found for scenario '{scenario}', skipping.")
             continue
             
-        land_use_types_slugs = [c.replace(prefix, "") for c in score_cols]
-        # Восстанавливаем оригинальные названия
-        land_use_types = ["Парк/Рекреация", "Жилая застройка", "Коммерция/Услуги", "Инфраструктурный Хаб"]
+        # Типы из колонок
+        land_use_types = [c.replace(prefix, "").replace("_", " ") for c in score_cols]
+        # В нашем случае это: "Опорные центры (Хабы)", "Локальные точки притяжения", "Линейные элементы (Маршруты)"
         
         # Формируем матрицу S_ik
         s_ik_matrix = blocks_gdf[score_cols].values
@@ -192,12 +198,14 @@ def run_optimization(
             s_ik_matrix=s_ik_matrix,
             acc_matrix=acc_matrix,
             land_use_types=land_use_types,
-            lambda_dist=0.5  # Настраиваемый вес синергии
+            areas_ha=areas_ha.values,
+            lambda_dist=0.5,
+            lambda_cap=1.0
         )
         
         best_state, _ = optimizer.run(max_iter=max_iter)
         
-        # Сохраняем результаты для конкретного сценария
+        # Сохраняем результаты
         target_lu_names = [land_use_types[i] for i in best_state]
         blocks_gdf[f"Target_LandUse_{scenario}"] = target_lu_names
         
@@ -208,7 +216,7 @@ def run_optimization(
             lu_idx = best_state[idx]
             s_ik_score = s_ik_matrix[idx, lu_idx]
             
-            area_m2 = areas_m2.iloc[idx]
+            area_m2 = areas_ha.iloc[idx] * 10000.0
             cap = calculate_capacity(area_m2, lu_type, s_ik_score)
             capacities.append(round(cap, 2))
             

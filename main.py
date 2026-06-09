@@ -1,6 +1,10 @@
 import sys
 import os
 
+# Добавляем корень проекта в sys.path, чтобы избежать ошибки ModuleNotFoundError 
+# и запускать скрипт без костылей вроде $env:PYTHONPATH="."
+sys.path.insert(0, os.path.abspath(os.path.dirname(__file__)))
+
 # Принудительно переключаем вывод на UTF-8, чтобы кириллица корректно
 # отображалась в Windows-терминале и при редиректе в файл/пайп.
 try:
@@ -93,6 +97,23 @@ def generate_ucm(region_names: list, output_path: str = "data/processed/ucm_bloc
     # 3. Атрибутирование блоков (UCM) (Этап 3 - часть старого кода)
     builder = UCMBuilder(blocks_gdf=blocks_gdf)
     builder.attribute_land_use(landuse_gdf=land_use_gdf)
+    
+    # Извлекаем болота и воду для новых факторов
+    if not land_use_gdf.empty:
+        # Болота
+        wetlands = land_use_gdf[land_use_gdf.get('natural') == 'wetland']
+        builder.attribute_swampiness(wetlands_gdf=wetlands)
+        
+        # Водные объекты (полигоны и линии)
+        water_tags = ['water', 'river', 'stream', 'canal', 'lake']
+        is_water = pd.Series(False, index=land_use_gdf.index)
+        for tag in ['natural', 'landuse', 'water', 'waterway']:
+            if tag in land_use_gdf.columns:
+                is_water |= land_use_gdf[tag].isin(water_tags) | land_use_gdf[tag].notna() if tag in ['water', 'waterway'] else land_use_gdf[tag].isin(water_tags)
+        
+        water_gdf = land_use_gdf[is_water]
+        builder.attribute_water_density(water_gdf=water_gdf)
+
     builder.attribute_amenities(amenities_gdf=amenities_gdf)
     builder.attribute_cultural_heritage(okn_gdf=okn_gdf)
     builder.attribute_protected_areas(oopt_gdf=oopt_gdf)
@@ -109,33 +130,51 @@ def generate_ucm(region_names: list, output_path: str = "data/processed/ucm_bloc
         # iduedu ожидает полигон в EPSG:4326
         boundary_poly_4326 = boundary_gdf.to_crs(epsg=4326).unary_union
         
-        # Для ускорения расчетов и избежания блокировок Overpass API (406 Not Acceptable),
-        # мы используем автомобильный граф (Drive Graph) в качестве базового.
-        print("Построение графа дорожной сети (iduedu.get_drive_graph)...")
-        intermodal_graph = iduedu.get_drive_graph(polygon=boundary_poly_4326)
-        graph_crs = intermodal_graph.graph.get('crs', 4326)
-        
-        # Центроиды блоков для расчета матрицы
-        blocks_for_matrix = builder.get_ucm().copy()
-        if not blocks_for_matrix.crs.is_projected:
-            blocks_for_matrix = blocks_for_matrix.to_crs(blocks_for_matrix.estimate_utm_crs())
-        blocks_for_matrix['geometry'] = blocks_for_matrix.geometry.centroid
-        blocks_for_matrix = blocks_for_matrix.to_crs(graph_crs)
-        
-        print("Расчет матрицы доступности (get_adj_matrix_gdf_to_gdf)...")
-        # Вычисляем матрицу между всеми блоками
-        acc_matrix = iduedu.get_adj_matrix_gdf_to_gdf(
-            gdf_from=blocks_for_matrix,
-            gft_to=blocks_for_matrix,
-            nx_graph=intermodal_graph,
-            weight='time_min',
-            dtype=np.float32
-        )
-        
-        # Сохраняем матрицу доступности
         matrix_path = "data/processed/accessibility_matrix.parquet"
-        acc_matrix.to_parquet(matrix_path)
-        print(f"=== Матрица доступности успешно сохранена: {matrix_path} ===")
+        try:
+            # Для ускорения расчетов и избежания блокировок Overpass API (406 Not Acceptable),
+            # мы используем автомобильный граф (Drive Graph) в качестве базового.
+            print("Построение графа дорожной сети (iduedu.get_drive_graph)...")
+            intermodal_graph = iduedu.get_drive_graph(territory=boundary_poly_4326)
+            graph_crs = intermodal_graph.graph.get('crs', 4326)
+            
+            # Центроиды блоков для расчета матрицы
+            blocks_for_matrix = builder.get_ucm().copy()
+            if not blocks_for_matrix.crs.is_projected:
+                blocks_for_matrix = blocks_for_matrix.to_crs(blocks_for_matrix.estimate_utm_crs())
+            blocks_for_matrix['geometry'] = blocks_for_matrix.geometry.centroid
+            blocks_for_matrix = blocks_for_matrix.to_crs(graph_crs)
+            
+            print("Расчет матрицы доступности (get_adj_matrix_gdf_to_gdf)...")
+            # Вычисляем матрицу между всеми блоками
+            acc_matrix = iduedu.get_adj_matrix_gdf_to_gdf(
+                gdf_from=blocks_for_matrix,
+                gft_to=blocks_for_matrix,
+                nx_graph=intermodal_graph,
+                weight='time_min',
+                dtype=np.float32
+            )
+            acc_matrix.to_parquet(matrix_path)
+            print(f"=== Матрица доступности успешно сохранена: {matrix_path} ===")
+        except Exception as e:
+            print(f"⚠️ Ошибка при построении графа или матрицы: {e}")
+            print("Использование евклидова расстояния в качестве заглушки...")
+            blocks_for_matrix = builder.get_ucm().copy()
+            if not blocks_for_matrix.crs.is_projected:
+                blocks_for_matrix = blocks_for_matrix.to_crs(blocks_for_matrix.estimate_utm_crs())
+            
+            # Создаем матрицу расстояний (в метрах)
+            centroids = blocks_for_matrix.geometry.centroid
+            n = len(centroids)
+            dist_matrix = np.zeros((n, n), dtype=np.float32)
+            for i in range(n):
+                for j in range(n):
+                    dist_matrix[i, j] = centroids.iloc[i].distance(centroids.iloc[j]) / 1000.0 * 10.0 # примерное время в мин
+            
+            ids = blocks_for_matrix.index.astype(str)
+            acc_matrix = pd.DataFrame(dist_matrix, index=ids, columns=ids)
+            acc_matrix.to_parquet(matrix_path)
+            print(f"=== Матрица (Евклид) сохранена: {matrix_path} ===")
 
     # 6. Сценарное взвешивание AHP (Этап 4)
     print("\n=== Старт сценарного взвешивания (AHP) ===")
@@ -169,10 +208,10 @@ def generate_ucm(region_names: list, output_path: str = "data/processed/ucm_bloc
     return
 
 if __name__ == "__main__":
-    # Тестируем на двух смежных небольших населенных пунктах для быстрого прогона,
-    # сохраняя логику межрегионального взаимодействия.
-    test_regions = [
-        "Рощино, Ленинградская область, Россия",
-        "Зеленогорск, Санкт-Петербург, Россия"
+    # Пилотный полигон для валидации модели:
+    # Стык Пушкинского района (СПб) и Гатчинского района (ЛО)
+    pilot_regions = [
+        "Пушкинский район, Санкт-Петербург, Россия",
+        "Гатчинский район, Ленинградская область, Россия"
     ]
-    generate_ucm(region_names=test_regions)
+    generate_ucm(region_names=pilot_regions)

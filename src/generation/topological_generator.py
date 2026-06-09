@@ -22,26 +22,56 @@ class TopologicalGenerator:
         """
         Скачивает линии дорог, железных дорог и водных объектов через OSMnx
         для использования их в качестве барьеров при нарезке.
+        Реализует переменный масштаб сетки: вблизи ТПУ сохраняются все дороги,
+        в удаленных зонах — только магистральные.
         """
-        print("Скачивание физических барьеров (дороги, ж/д, реки) через OSMnx...")
+        print("Скачивание физических барьеров с учетом переменного масштаба...")
         
-        # Объединяем границы в один полигон
         query_poly = self.boundary_gdf.unary_union
+        hubs_gdf = self._fetch_hubs()
         
-        # 1. Дороги (магистрали и основные улицы)
+        # 1. Дороги
         roads_tags = {
             'highway': ['motorway', 'trunk', 'primary', 'secondary', 'tertiary', 
                         'unclassified', 'residential']
         }
         try:
-            roads_gdf = ox.features_from_polygon(query_poly, roads_tags)
-            roads_gdf = roads_gdf[roads_gdf.geometry.type.isin(['LineString', 'MultiLineString'])]
-            roads_gdf = roads_gdf.reset_index(drop=True)
+            all_roads = ox.features_from_polygon(query_poly, roads_tags)
+            all_roads = all_roads[all_roads.geometry.type.isin(['LineString', 'MultiLineString'])]
+            all_roads = all_roads.reset_index(drop=True)
+            
+            if hubs_gdf is not None and not hubs_gdf.empty:
+                print("Применение фильтрации дорог для переменного масштаба...")
+                # Создаем буферную зону вокруг ТПУ (например, 5 км)
+                # Переводим в метрическую проекцию для точного буфера
+                local_crs = self.boundary_gdf.estimate_utm_crs()
+                hubs_proj = hubs_gdf.to_crs(local_crs)
+                hubs_buffer = hubs_proj.buffer(5000).to_crs(epsg=4326).unary_union
+                
+                # Магистральные дороги (сохраняем везде)
+                major_highways = ['motorway', 'trunk', 'primary']
+                
+                def should_keep(row):
+                    # Если дорога магистральная - оставляем
+                    if row['highway'] in major_highways:
+                        return True
+                    # Если дорога вблизи ТПУ - оставляем
+                    if row.geometry.intersects(hubs_buffer):
+                        return True
+                    # Иначе отбрасываем для укрупнения блоков в лесах
+                    return False
+                
+                all_roads['keep'] = all_roads.apply(should_keep, axis=1)
+                roads_gdf = all_roads[all_roads['keep']].drop(columns=['keep']).copy()
+                print(f"  Дороги отфильтрованы: {len(all_roads)} -> {len(roads_gdf)}")
+            else:
+                roads_gdf = all_roads
+                
         except Exception as e:
             print(f"  [!] Ошибка при загрузке дорог: {e}")
             roads_gdf = None
 
-        # 2. Железные дороги
+        # 2. Железные дороги (всегда сохраняем как важные барьеры)
         rail_tags = {'railway': ['rail', 'light_rail', 'narrow_gauge']}
         try:
             rail_gdf = ox.features_from_polygon(query_poly, rail_tags)
@@ -62,6 +92,23 @@ class TopologicalGenerator:
             water_gdf = None
 
         return roads_gdf, rail_gdf, water_gdf
+
+    def _fetch_hubs(self):
+        """
+        Скачивает ТПУ (железнодорожные станции и вокзалы) для определения опорных центров.
+        """
+        print("Поиск ТПУ (вокзалы, станции) для определения опорных центров...")
+        query_poly = self.boundary_gdf.unary_union
+        hubs_tags = {'railway': ['station', 'halt']}
+        try:
+            hubs_gdf = ox.features_from_polygon(query_poly, hubs_tags)
+            # Оставляем только точечные объекты (центроиды станций)
+            hubs_gdf['geometry'] = hubs_gdf.geometry.centroid
+            hubs_gdf = hubs_gdf.reset_index(drop=True)
+            return hubs_gdf[['geometry']]
+        except Exception as e:
+            print(f"  [!] Ошибка при поиске ТПУ: {e}")
+            return None
 
     def generate_blocks(self, min_area_m2: float = 500.0) -> gpd.GeoDataFrame:
         """
@@ -123,11 +170,26 @@ class TopologicalGenerator:
         blocks_gdf = blocks_gdf.reset_index(drop=True)
         blocks_gdf['block_id'] = blocks_gdf.index.astype(str)
         
+        # Получаем ТПУ
+        hubs_gdf = self._fetch_hubs()
+        
+        # Расчет расстояния до ближайшего ТПУ (для будущего анализа)
+        if hubs_gdf is not None and not hubs_gdf.empty:
+            print("Расчет расстояния от блоков до ближайшего ТПУ...")
+            # Работаем в метрической проекции
+            hubs_proj = hubs_gdf.to_crs(blocks_gdf.crs)
+            # Для каждого блока находим расстояние до ближайшей точки ТПУ
+            blocks_gdf['dist_to_hubs'] = blocks_gdf.geometry.centroid.apply(
+                lambda x: hubs_proj.distance(x).min()
+            ).round(2)
+        else:
+            blocks_gdf['dist_to_hubs'] = 0.0
+
         # Возвращаем в EPSG:4326 для совместимости с остальной системой
         blocks_gdf = blocks_gdf.to_crs(epsg=4326)
         
-        # Сохраняем только нужные колонки
-        blocks_gdf = blocks_gdf[['block_id', 'geometry']]
+        # Сохраняем нужные колонки
+        blocks_gdf = blocks_gdf[['block_id', 'dist_to_hubs', 'geometry']]
         print("=== Топологическая генерация завершена ===")
         
         return blocks_gdf

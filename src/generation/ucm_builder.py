@@ -212,6 +212,73 @@ class UCMBuilder:
         elif 'dominant_landuse' not in self.blocks.columns:
             self.blocks['dominant_landuse'] = "Неизвестно"
 
+    def attribute_swampiness(self, wetlands_gdf: gpd.GeoDataFrame):
+        """
+        Привязка заболоченности (natural=wetland). Рассчитывает долю покрытия.
+        """
+        if wetlands_gdf is None or wetlands_gdf.empty:
+            self.blocks['swamp_share'] = 0.0
+            return
+            
+        print("Атрибутирование заболоченности...")
+        if self.blocks.crs != wetlands_gdf.crs:
+            wetlands_gdf = wetlands_gdf.to_crs(self.blocks.crs)
+            
+        blocks_lite = self.blocks[['block_id', 'geometry']].copy()
+        intersections = gpd.overlay(blocks_lite, wetlands_gdf, how='intersection', keep_geom_type=False)
+        
+        if intersections.empty:
+            self.blocks['swamp_share'] = 0.0
+            return
+            
+        intersections['swamp_area'] = intersections.geometry.area
+        swamp_area = intersections.groupby('block_id')['swamp_area'].sum().reset_index()
+        
+        self.blocks = self.blocks.merge(swamp_area, on='block_id', how='left')
+        self.blocks['swamp_area'] = self.blocks['swamp_area'].fillna(0.0)
+        
+        utm_crs = self.blocks.estimate_utm_crs()
+        blocks_proj_area = self.blocks.to_crs(utm_crs).geometry.area if not self.blocks.crs.is_projected else self.blocks.geometry.area
+        self.blocks['swamp_share'] = (self.blocks['swamp_area'] / blocks_proj_area).fillna(0.0)
+
+    def attribute_water_density(self, water_gdf: gpd.GeoDataFrame):
+        """
+        Привязка плотности водных объектов (реки, озера).
+        Рассчитывает суммарную длину рек или площадь озер на кв. км.
+        """
+        if water_gdf is None or water_gdf.empty:
+            self.blocks['water_density'] = 0.0
+            return
+            
+        print("Атрибутирование плотности водных объектов...")
+        if self.blocks.crs != water_gdf.crs:
+            water_gdf = water_gdf.to_crs(self.blocks.crs)
+            
+        # Для простоты считаем пересечение геометрий
+        blocks_lite = self.blocks[['block_id', 'geometry']].copy()
+        intersections = gpd.overlay(blocks_lite, water_gdf, how='intersection', keep_geom_type=False)
+        
+        if intersections.empty:
+            self.blocks['water_density'] = 0.0
+            return
+            
+        # Считаем "вес" воды: площадь для полигонов, длина * 10м для линий
+        def get_water_weight(geom):
+            if geom.type in ['Polygon', 'MultiPolygon']:
+                return geom.area
+            else:
+                return geom.length * 10.0 # условная ширина 10м
+                
+        intersections['water_weight'] = intersections.geometry.apply(get_water_weight)
+        water_weight = intersections.groupby('block_id')['water_weight'].sum().reset_index()
+        
+        self.blocks = self.blocks.merge(water_weight, on='block_id', how='left')
+        self.blocks['water_weight'] = self.blocks['water_weight'].fillna(0.0)
+        
+        utm_crs = self.blocks.estimate_utm_crs()
+        blocks_proj_area = self.blocks.to_crs(utm_crs).geometry.area if not self.blocks.crs.is_projected else self.blocks.geometry.area
+        self.blocks['water_density'] = (self.blocks['water_weight'] / blocks_proj_area).fillna(0.0)
+
     def get_ucm(self) -> gpd.GeoDataFrame:
         """
         Возвращает полностью сгенерированный слой UCM.

@@ -1,8 +1,10 @@
 import streamlit as st
 import geopandas as gpd
+import pandas as pd
 import folium
 from streamlit_folium import st_folium
 import json
+import numpy as np
 
 # Конфигурация страницы должна быть первым вызовом
 st.set_page_config(
@@ -17,15 +19,16 @@ st.markdown("""
     <style>
     .main { background-color: #0e1117; }
     h1, h2, h3 { color: #f0f2f6; }
+    .stMetric { background-color: #1e2129; padding: 10px; border-radius: 5px; }
     </style>
 """, unsafe_allow_html=True)
 
-# Цветовая палитра для типов землепользования
+# Цветовая палитра для элементов ТОКТ (согласно Lutchenko)
 LANDUSE_COLORS = {
-    "Парк/Рекреация": "#2ca02c",      # Зеленый
-    "Жилая застройка": "#8c564b",     # Коричневый
-    "Коммерция/Услуги": "#ff7f0e",    # Оранжевый
-    "Инфраструктурный Хаб": "#1f77b4" # Синий
+    "Опорные центры (Хабы)": "#800080",      # Фиолетовый
+    "Локальные точки притяжения": "#ff7f0e", # Оранжевый
+    "Линейные элементы (Маршруты)": "#2ca02c", # Зеленый
+    "Неизвестно": "#808080"
 }
 
 @st.cache_data
@@ -37,10 +40,9 @@ def load_data():
         if gdf.crs and gdf.crs.to_epsg() != 4326:
             gdf = gdf.to_crs(epsg=4326)
         
-        gdf['dominant_landuse'] = gdf['dominant_landuse'].fillna("Неизвестно")
-        gdf['forest_share'] = (gdf['forest_share'].fillna(0) * 100).round(1).astype(str) + "%"
+        # Автоматический подбор всех колонок S_ik
+        s_ik_cols = [c for c in gdf.columns if c.startswith("S_ik_")]
         
-        # ОСТАВЛЯЕМ ТОЛЬКО НУЖНЫЕ ДЛЯ КАРТЫ КОЛОНКИ
         keep_cols = [
             'block_id', 
             'dominant_landuse', 
@@ -48,12 +50,20 @@ def load_data():
             'food_count', 
             'transport_count', 
             'forest_share',
-            'geometry',
-            # Сценарные колонки
-            'Target_LandUse_Экоцентризм', 'Capacity_Экоцентризм', 'S_ik_Экоцентризм_Парк_Рекреация', 'S_ik_Экоцентризм_Жилая_застройка', 'S_ik_Экоцентризм_Коммерция_Услуги', 'S_ik_Экоцентризм_Инфраструктурный_Хаб',
-            'Target_LandUse_Историко-центризм', 'Capacity_Историко-центризм', 'S_ik_Историко_центризм_Парк_Рекреация', 'S_ik_Историко_центризм_Жилая_застройка', 'S_ik_Историко_центризм_Коммерция_Услуги', 'S_ik_Историко_центризм_Инфраструктурный_Хаб',
-            'Target_LandUse_Инфраструктурный', 'Capacity_Инфраструктурный', 'S_ik_Инфраструктурный_Парк_Рекреация', 'S_ik_Инфраструктурный_Жилая_застройка', 'S_ik_Инфраструктурный_Коммерция_Услуги', 'S_ik_Инфраструктурный_Инфраструктурный_Хаб'
+            'swamp_share',
+            'water_density',
+            'dist_to_hubs',
+            'geometry'
         ]
+        
+        # Добавляем сценарные колонки
+        for scenario in ["Экоцентризм", "Историко-центризм", "Инфраструктурный"]:
+            target_col = f"Target_LandUse_{scenario}"
+            cap_col = f"Capacity_{scenario}"
+            if target_col in gdf.columns: keep_cols.append(target_col)
+            if cap_col in gdf.columns: keep_cols.append(cap_col)
+        
+        keep_cols.extend(s_ik_cols)
         
         existing_cols = [c for c in keep_cols if c in gdf.columns]
         gdf = gdf[existing_cols]
@@ -64,117 +74,121 @@ def load_data():
         return None
 
 def main():
-    st.title("🗺️ Интерактивная модель: Туристический потенциал территорий")
-    st.markdown("Предиктивная визуализация оптимального землепользования (Target Land Use) с применением алгоритма Simulated Annealing.")
+    st.title("🗺️ Parametric Model of Tourism Framework (TOK T)")
+    st.markdown("Интерактивная DSS-система предиктивного мастер-планирования региона")
     
     gdf = load_data()
     if gdf is None or gdf.empty:
+        st.warning("Ожидание данных... Убедитесь, что 'data/processed/ucm_blocks_optimized.geojson' существует.")
         return
         
     # --- БОКОВАЯ ПАНЕЛЬ (SIDEBAR) ---
-    st.sidebar.header("⚙️ Параметры отображения")
-    
-    total_blocks = len(gdf)
-    st.sidebar.metric("Всего полигонов (блоков):", total_blocks)
+    st.sidebar.image("https://img.icons8.com/fluency/96/map-editing.png", width=80)
+    st.sidebar.header("⚙️ Конфигурация Модели")
     
     scenario = st.sidebar.selectbox(
-        "Выберите сценарий развития:",
-        ["Экоцентризм", "Историко-центризм", "Инфраструктурный"]
+        "Сценарий развития:",
+        ["Экоцентризм", "Историко-центризм", "Инфраструктурный"],
+        help="Смена сценария меняет веса AHP и пересчитывает Target Land Use"
     )
     
-    st.sidebar.markdown("---")
-    st.sidebar.markdown("### Легенда (Target Land Use)")
-    for lu, color in LANDUSE_COLORS.items():
-        st.sidebar.markdown(f'<div style="display:flex; align-items:center;"><div style="width:20px; height:20px; background-color:{color}; border-radius:4px; margin-right:10px;"></div><b>{lu}</b></div>', unsafe_allow_html=True)
-
-    # Подготавливаем данные для выбранного сценария
+    # Статистика по сценарию
     scenario_slug = scenario.replace("-", "_").replace(" ", "_")
     target_col = f"Target_LandUse_{scenario}"
-    capacity_col = f"Capacity_{scenario}"
     
-    # Копируем нужные колонки в общие имена для фолиума
-    display_gdf = gdf.copy()
-    display_gdf['Current_Target_LandUse'] = display_gdf[target_col]
-    display_gdf['Current_Capacity'] = display_gdf[capacity_col].astype(str) + " чел."
-    
-    # Извлекаем максимальный балл пригодности для выбранного типа
-    display_gdf['Max_Suitability'] = display_gdf.apply(
-        lambda row: round(row.get(f"S_ik_{scenario_slug}_{row[target_col].replace('/', '_').replace(' ', '_')}", 0.0), 4),
-        axis=1
-    )
+    if target_col not in gdf.columns:
+        st.error(f"Колонка {target_col} не найдена в данных. Пересчитайте модель.")
+        return
 
-    # --- КАРТА FOLIUM ---
+    st.sidebar.markdown("---")
+    st.sidebar.markdown("### Аналитика по региону")
+    
+    counts = gdf[target_col].value_counts()
+    for cat, count in counts.items():
+        st.sidebar.progress(int(count/len(gdf)*100), text=f"{cat}: {count} блоков")
+
+    st.sidebar.markdown("### Легенда")
+    for lu, color in LANDUSE_COLORS.items():
+        st.sidebar.markdown(f'<div style="display:flex; align-items:center; margin-bottom:5px;"><div style="width:16px; height:16px; background-color:{color}; border-radius:3px; margin-right:8px;"></div><span style="font-size:14px;">{lu}</span></div>', unsafe_allow_html=True)
+
+    # Подготовка данных для визуализации
+    display_gdf = gdf.copy()
+    display_gdf['Target_LU'] = display_gdf[target_col]
+    display_gdf['Cap_Val'] = display_gdf[f"Capacity_{scenario}"].round(0).astype(int)
+    
+    # Извлечение S_ik для всплывашек
+    # Категории: Хабы, Точки притяжения, Маршруты
+    s_hubs = f"S_ik_{scenario_slug}_Опорные_центры_(Хабы)"
+    s_points = f"S_ik_{scenario_slug}_Локальные_точки_притяжения"
+    s_routes = f"S_ik_{scenario_slug}_Линейные_элементы_(Маршруты)"
+    
+    # Безопасное получение значений
+    display_gdf['S_Hubs'] = display_gdf[s_hubs].round(3) if s_hubs in display_gdf.columns else 0.0
+    display_gdf['S_Points'] = display_gdf[s_points].round(3) if s_points in display_gdf.columns else 0.0
+    display_gdf['S_Routes'] = display_gdf[s_routes].round(3) if s_routes in display_gdf.columns else 0.0
+
+    # Оценка приоритета
+    display_gdf['Suitability'] = display_gdf.apply(lambda r: r.get(s_hubs, 0.0) if r['Target_LU'] == "Опорные центры (Хабы)" else (r.get(s_points, 0.0) if r['Target_LU'] == "Локальные точки притяжения" else r.get(s_routes, 0.0)), axis=1)
+    
+    conditions = [
+        (display_gdf['Suitability'] >= 0.7),
+        (display_gdf['Suitability'] >= 0.4),
+        (display_gdf['Suitability'] < 0.4)
+    ]
+    choices = ['⭐ Высокий', '📈 Средний', '🐚 Низкий']
+    display_gdf['Priority'] = np.select(conditions, choices, default='🐚 Низкий')
+
+    # --- КАРТА ---
     bounds = display_gdf.total_bounds
     center_lat = (bounds[1] + bounds[3]) / 2
     center_lon = (bounds[0] + bounds[2]) / 2
 
-    # Используем премиальную темную подложку
     m = folium.Map(
         location=[center_lat, center_lon],
-        zoom_start=14,
-        tiles="CartoDB dark_matter"
+        zoom_start=12,
+        tiles="CartoDB dark_matter",
+        control_scale=True
     )
 
-    def style_function(feature):
-        target_lu = feature['properties'].get('Current_Target_LandUse', "Неизвестно")
-        color = LANDUSE_COLORS.get(target_lu, "#808080")
+    def style_func(feature):
+        lu = feature['properties'].get('Target_LU', "Неизвестно")
+        color = LANDUSE_COLORS.get(lu, "#808080")
         return {
             'fillColor': color,
-            'color': '#ffffff',  # белые границы
-            'weight': 0.5,
-            'fillOpacity': 0.75
+            'color': '#ffffff',
+            'weight': 0.8,
+            'fillOpacity': 0.65
         }
 
-    def highlight_function(feature):
-        return {
-            'fillColor': '#ffffff',  # Белый при наведении
-            'color': '#ffffff',
-            'weight': 2,
-            'fillOpacity': 0.9
-        }
+    popup_fields = ['block_id', 'Target_LU', 'Priority', 'Cap_Val', 'S_Hubs', 'S_Points', 'S_Routes', 'dist_to_hubs']
+    popup_aliases = ['🆔 ID:', '🎯 Тип ТОКТ:', '⚡ Приоритет:', '👥 Емкость (чел):', '🟣 S(Хаб):', '🟠 S(Точка):', '🟢 S(Маршрут):', '🛤️ ТПУ (м):']
 
     folium.GeoJson(
         display_gdf,
-        style_function=style_function,
-        highlight_function=highlight_function,
+        style_function=style_func,
+        highlight_function=lambda x: {'weight': 3, 'color': '#ffed00', 'fillOpacity': 0.9},
         tooltip=folium.GeoJsonTooltip(
-            fields=[
-                'block_id', 
-                'Current_Target_LandUse', 
-                'Max_Suitability', 
-                'Current_Capacity', 
-                'dominant_landuse',
-                'accommodation_count', 
-                'food_count', 
-                'transport_count'
-            ],
-            aliases=[
-                '🆔 ID Блока:', 
-                '🎯 Предписанный тип (Target):', 
-                '📈 Балл пригодности (S_ik):', 
-                '⚡ Расчетная емкость (Capacity):', 
-                '🏙️ Текущее землепользование:',
-                '🛏️ Места размещения:', 
-                '🍽️ Точки питания:', 
-                '🚌 Транспорт:'
-            ],
-            labels=True,
+            fields=popup_fields,
+            aliases=popup_aliases,
+            localize=True,
             sticky=False,
+            labels=True,
             style="""
-                background-color: #2b2b2b;
-                color: #f0f0f0;
-                font-family: "Inter", sans-serif;
-                font-size: 13px;
-                padding: 10px;
-                border: 1px solid #444;
-                border-radius: 6px;
+                background-color: #1a1c23;
+                color: #ffffff;
+                font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+                font-size: 14px;
+                padding: 12px;
+                border: 2px solid #3e4451;
+                border-radius: 8px;
                 box-shadow: 3px 3px 10px rgba(0,0,0,0.5);
             """
         )
     ).add_to(m)
 
-    # Отрисовка в веб-интерфейсе
-    st_folium(m, width="100%", height=700, returned_objects=[])
+    st_folium(m, width="100%", height=750, returned_objects=[])
+    
+    st.info("💡 **Подсказка:** Наведите на блок, чтобы увидеть детальный расчет индексов пригодности $S_{ik}$ по всем альтернативам.")
 
 if __name__ == "__main__":
     main()

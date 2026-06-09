@@ -57,13 +57,19 @@ class OSMLoader:
 
     def get_land_use(self, boundary_poly=None) -> gpd.GeoDataFrame:
         """
-        Загрузка данных о типах землепользования (Land Use).
+        Загрузка данных о типах землепользования (Land Use), воды и заболоченности.
         """
-        print("Загрузка данных землепользования (Land Use и Природа)...")
-        tags = {'landuse': True, 'natural': ['wood', 'water'], 'water': True}
+        print("Загрузка данных землепользования (Land Use, Природа, Вода, Болота)...")
+        tags = {
+            'landuse': True, 
+            'natural': ['wood', 'water', 'wetland'], 
+            'water': True, 
+            'waterway': True
+        }
         
         if boundary_poly is not None:
-            query_poly = boundary_poly.envelope
+            # Используем unary_union для покрытия всей области
+            query_poly = boundary_poly.unary_union
             lu_gdf = ox.features_from_polygon(query_poly, tags)
         else:
             # Если полигон не передан, запрашиваем по списку локаций
@@ -75,8 +81,6 @@ class OSMLoader:
                     print(f"Ошибка загрузки POI для {loc}: {e}")
             lu_gdf = pd.concat(gdfs, ignore_index=True) if gdfs else gpd.GeoDataFrame()
             
-        if not lu_gdf.empty:
-            lu_gdf = lu_gdf[lu_gdf.geometry.type.isin(['Polygon', 'MultiPolygon'])]
         return lu_gdf
         
     def get_amenities_and_buildings(self, boundary_poly=None) -> gpd.GeoDataFrame:
