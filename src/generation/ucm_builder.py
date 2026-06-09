@@ -21,6 +21,12 @@ class UCMBuilder:
         Привязка объектов инфраструктуры к блокам.
         Считает количество объектов каждого типа (атрибут 'amenity', 'building', 'leisure') в блоке.
         """
+        # Инициализируем колонки нулями
+        for col in ['amenity_count', 'building_count', 'leisure_count', 'poi_count', 
+                    'food_count', 'accommodation_count', 'transport_count']:
+            if col not in self.blocks.columns:
+                self.blocks[col] = 0
+
         if amenities_gdf is None or amenities_gdf.empty:
             return
         if self.blocks is None or self.blocks.empty:
@@ -35,15 +41,13 @@ class UCMBuilder:
         joined = gpd.sjoin(amenities_gdf, self.blocks, how='inner', predicate='within')
         
         if joined.empty:
-            self.blocks['amenity_count'] = 0
-            self.blocks['building_count'] = 0
-            self.blocks['leisure_count'] = 0
-            self.blocks['poi_count'] = 0
             return
 
         # Общее количество POI/объектов
-        poi_counts = joined.groupby('block_id').size().reset_index(name='poi_count')
-        self.blocks = self.blocks.merge(poi_counts, on='block_id', how='left')
+        poi_counts = joined.groupby('block_id').size().reset_index(name='poi_count_new')
+        if 'poi_count' in self.blocks.columns:
+            self.blocks = self.blocks.drop(columns=['poi_count'])
+        self.blocks = self.blocks.merge(poi_counts, on='block_id', how='left').rename(columns={'poi_count_new': 'poi_count'})
         self.blocks['poi_count'] = self.blocks['poi_count'].fillna(0).astype(int)
 
         # Семантическая классификация для AHP матрицы
@@ -66,24 +70,32 @@ class UCMBuilder:
             )
             rows.append({
                 'block_id': block_id,
-                'food_count': int(food),
-                'accommodation_count': int(accomm),
-                'transport_count': int(transport)
+                'food_count_new': int(food),
+                'accommodation_count_new': int(accomm),
+                'transport_count_new': int(transport)
             })
             
         if rows:
             semantic_counts = pd.DataFrame(rows)
-            self.blocks = self.blocks.merge(semantic_counts, on='block_id', how='left')
+            for c in ['food_count', 'accommodation_count', 'transport_count']:
+                if c in self.blocks.columns:
+                    self.blocks = self.blocks.drop(columns=[c])
+            self.blocks = self.blocks.merge(semantic_counts, on='block_id', how='left').rename(columns={
+                'food_count_new': 'food_count',
+                'accommodation_count_new': 'accommodation_count',
+                'transport_count_new': 'transport_count'
+            })
         
         for c in ['food_count', 'accommodation_count', 'transport_count']:
-            if c not in self.blocks.columns:
-                self.blocks[c] = 0
             self.blocks[c] = self.blocks[c].fillna(0).astype(int)
 
     def attribute_cultural_heritage(self, okn_gdf: gpd.GeoDataFrame):
         """
         Привязка Объектов Культурного Наследия (ОКН).
         """
+        if 'okn_count' not in self.blocks.columns:
+            self.blocks['okn_count'] = 0
+
         if okn_gdf is None or okn_gdf.empty:
             return
         if self.blocks is None or self.blocks.empty:
@@ -96,22 +108,30 @@ class UCMBuilder:
             
         okn_pts = okn_gdf.copy()
         if okn_pts.geometry.type.iloc[0] != 'Point':
-            okn_pts['geometry'] = okn_pts.geometry.centroid
+            # Перепроецируем для корректного расчета центроида
+            local_crs = okn_pts.estimate_utm_crs()
+            okn_pts['geometry'] = okn_pts.to_crs(local_crs).geometry.centroid.to_crs(okn_pts.crs)
 
         joined = gpd.sjoin(okn_pts, self.blocks, how='inner', predicate='within')
         
         if joined.empty:
-            self.blocks['okn_count'] = 0
             return
 
-        okn_counts = joined.groupby('block_id').size().reset_index(name='okn_count')
-        self.blocks = self.blocks.merge(okn_counts, on='block_id', how='left')
+        okn_counts = joined.groupby('block_id').size().reset_index(name='okn_count_new')
+        if 'okn_count' in self.blocks.columns:
+            self.blocks = self.blocks.drop(columns=['okn_count'])
+        self.blocks = self.blocks.merge(okn_counts, on='block_id', how='left').rename(columns={'okn_count_new': 'okn_count'})
         self.blocks['okn_count'] = self.blocks['okn_count'].fillna(0).astype(int)
 
     def attribute_protected_areas(self, oopt_gdf: gpd.GeoDataFrame):
         """
         Привязка ООПТ (полигоны). Рассчитывает площадь пересечения с блоком и долю покрытия.
         """
+        # Инициализация колонок
+        for col in ['oopt_any', 'oopt_area_m2', 'oopt_share']:
+            if col not in self.blocks.columns:
+                self.blocks[col] = 0.0 if col != 'oopt_any' else False
+
         if oopt_gdf is None or oopt_gdf.empty:
             return
         if self.blocks is None or self.blocks.empty:
@@ -122,37 +142,56 @@ class UCMBuilder:
         if self.blocks.crs != oopt_gdf.crs:
             oopt_gdf = oopt_gdf.to_crs(self.blocks.crs)
 
-        # Площадь блока (в метрической СК, т.к. блоки приходят из генератора в UTM)
-        blocks_area = self.blocks[['block_id', 'geometry']].copy()
-        blocks_area['block_area_m2'] = blocks_area.geometry.area
+        # Площадь блока (в метрической СК)
+        utm_crs = self.blocks.estimate_utm_crs()
+        blocks_proj = self.blocks.to_crs(utm_crs) if not self.blocks.crs.is_projected else self.blocks
+        blocks_area = pd.DataFrame({
+            'block_id': self.blocks['block_id'],
+            'block_area_m2': blocks_proj.geometry.area
+        })
 
-        intersections = gpd.overlay(self.blocks, oopt_gdf, how='intersection', keep_geom_type=False)
-        if intersections.empty:
-            self.blocks['oopt_any'] = False
-            self.blocks['oopt_area_m2'] = 0.0
-            self.blocks['oopt_share'] = 0.0
+        # Фильтруем только полигоны для корректной работы overlay и расчета площадей
+        oopt_poly = oopt_gdf[oopt_gdf.geometry.type.isin(['Polygon', 'MultiPolygon'])]
+        if oopt_poly.empty:
             return
 
+        intersections = gpd.overlay(self.blocks, oopt_poly, how='intersection', keep_geom_type=False)
+        if intersections.empty:
+            return
+
+        # Считаем площадь в метрической проекции
+        if not intersections.crs.is_projected:
+            intersections = intersections.to_crs(utm_crs)
+            
         intersections['oopt_intersect_area_m2'] = intersections.geometry.area
         oopt_area = (
             intersections.groupby('block_id')['oopt_intersect_area_m2']
             .sum()
             .reset_index()
-            .rename(columns={'oopt_intersect_area_m2': 'oopt_area_m2'})
+            .rename(columns={'oopt_intersect_area_m2': 'oopt_area_m2_new'})
         )
 
-        self.blocks = self.blocks.merge(oopt_area, on='block_id', how='left')
-        self.blocks = self.blocks.merge(blocks_area[['block_id', 'block_area_m2']], on='block_id', how='left')
+        for col in ['oopt_area_m2', 'oopt_share', 'oopt_any']:
+            if col in self.blocks.columns:
+                self.blocks = self.blocks.drop(columns=[col])
+
+        self.blocks = self.blocks.merge(oopt_area, on='block_id', how='left').rename(columns={'oopt_area_m2_new': 'oopt_area_m2'})
+        self.blocks = self.blocks.merge(blocks_area, on='block_id', how='left')
 
         self.blocks['oopt_area_m2'] = self.blocks['oopt_area_m2'].fillna(0.0)
-        # защита от деления на ноль
         self.blocks['oopt_share'] = (self.blocks['oopt_area_m2'] / self.blocks['block_area_m2'].replace({0: pd.NA})).fillna(0.0)
         self.blocks['oopt_any'] = self.blocks['oopt_area_m2'] > 0
+        self.blocks = self.blocks.drop(columns=['block_area_m2'])
 
     def attribute_land_use(self, landuse_gdf: gpd.GeoDataFrame):
         """
         Привязка землепользования. Определяет доминирующий тип landuse для блока.
         """
+        # Инициализация
+        for col in ['forest_area_m2', 'forest_share', 'dominant_landuse']:
+            if col not in self.blocks.columns:
+                self.blocks[col] = 0.0 if col != 'dominant_landuse' else "Неизвестно"
+
         if landuse_gdf is None or landuse_gdf.empty:
             return
         if self.blocks is None or self.blocks.empty:
@@ -163,26 +202,20 @@ class UCMBuilder:
         if self.blocks.crs != landuse_gdf.crs:
             landuse_gdf = landuse_gdf.to_crs(self.blocks.crs)
 
-        # Передаем только block_id и geometry для избежания конфликта одинаковых имен колонок
-        # (Например, если Fallback сгенерировал блоки из landuse_gdf, у блоков уже есть колонка landuse)
         blocks_lite = self.blocks[['block_id', 'geometry']].copy()
-        intersections = gpd.overlay(blocks_lite, landuse_gdf, how='intersection', keep_geom_type=False)
-        if intersections.empty:
+        landuse_poly = landuse_gdf[landuse_gdf.geometry.type.isin(['Polygon', 'MultiPolygon'])]
+        if landuse_poly.empty:
             return
 
-        # Оставляем только площадные геометрии для корректного расчёта площади
-        intersections = intersections[
-            intersections.geometry.type.isin(['Polygon', 'MultiPolygon'])
-        ]
+        intersections = gpd.overlay(blocks_lite, landuse_poly, how='intersection', keep_geom_type=False)
         if intersections.empty:
             return
             
         utm_crs = self.blocks.estimate_utm_crs()
         if not intersections.crs.is_projected:
-            intersections_proj = intersections.to_crs(utm_crs)
-            intersections['intersect_area'] = intersections_proj.geometry.area
-        else:
-            intersections['intersect_area'] = intersections.geometry.area
+            intersections = intersections.to_crs(utm_crs)
+        
+        intersections['intersect_area'] = intersections.geometry.area
         
         # Семантика: Доля леса (forest_share)
         forest_mask = pd.Series(False, index=intersections.index)
@@ -193,8 +226,10 @@ class UCMBuilder:
             
         forest_inter = intersections[forest_mask]
         if not forest_inter.empty:
-            forest_area = forest_inter.groupby('block_id')['intersect_area'].sum().reset_index(name='forest_area_m2')
-            self.blocks = self.blocks.merge(forest_area, on='block_id', how='left')
+            forest_area = forest_inter.groupby('block_id')['intersect_area'].sum().reset_index(name='forest_area_m2_new')
+            if 'forest_area_m2' in self.blocks.columns:
+                self.blocks = self.blocks.drop(columns=['forest_area_m2'])
+            self.blocks = self.blocks.merge(forest_area, on='block_id', how='left').rename(columns={'forest_area_m2_new': 'forest_area_m2'})
             self.blocks['forest_area_m2'] = self.blocks['forest_area_m2'].fillna(0.0)
         else:
             self.blocks['forest_area_m2'] = 0.0
@@ -204,9 +239,10 @@ class UCMBuilder:
         
         # Доминирующее землепользование
         if 'landuse' in intersections.columns:
-            # Находим тип landuse с наибольшей площадью внутри блока
             idx = intersections.groupby('block_id')['intersect_area'].idxmax()
             dominant_lu = intersections.loc[idx, ['block_id', 'landuse']]
+            if 'dominant_landuse' in self.blocks.columns:
+                self.blocks = self.blocks.drop(columns=['dominant_landuse'])
             dominant_lu.rename(columns={'landuse': 'dominant_landuse'}, inplace=True)
             self.blocks = self.blocks.merge(dominant_lu, on='block_id', how='left')
         elif 'dominant_landuse' not in self.blocks.columns:
@@ -216,8 +252,10 @@ class UCMBuilder:
         """
         Привязка заболоченности (natural=wetland). Рассчитывает долю покрытия.
         """
-        if wetlands_gdf is None or wetlands_gdf.empty:
+        if 'swamp_share' not in self.blocks.columns:
             self.blocks['swamp_share'] = 0.0
+
+        if wetlands_gdf is None or wetlands_gdf.empty:
             return
             
         print("Атрибутирование заболоченности...")
@@ -225,19 +263,28 @@ class UCMBuilder:
             wetlands_gdf = wetlands_gdf.to_crs(self.blocks.crs)
             
         blocks_lite = self.blocks[['block_id', 'geometry']].copy()
-        intersections = gpd.overlay(blocks_lite, wetlands_gdf, how='intersection', keep_geom_type=False)
-        
-        if intersections.empty:
-            self.blocks['swamp_share'] = 0.0
+        wetlands_poly = wetlands_gdf[wetlands_gdf.geometry.type.isin(['Polygon', 'MultiPolygon'])]
+        if wetlands_poly.empty:
             return
+
+        intersections = gpd.overlay(blocks_lite, wetlands_poly, how='intersection', keep_geom_type=False)
+        if intersections.empty:
+            return
+            
+        # Проецируем для площади
+        utm_crs = self.blocks.estimate_utm_crs()
+        if not intersections.crs.is_projected:
+            intersections = intersections.to_crs(utm_crs)
             
         intersections['swamp_area'] = intersections.geometry.area
         swamp_area = intersections.groupby('block_id')['swamp_area'].sum().reset_index()
         
+        if 'swamp_share' in self.blocks.columns:
+            self.blocks = self.blocks.drop(columns=['swamp_share'])
+            
         self.blocks = self.blocks.merge(swamp_area, on='block_id', how='left')
         self.blocks['swamp_area'] = self.blocks['swamp_area'].fillna(0.0)
         
-        utm_crs = self.blocks.estimate_utm_crs()
         blocks_proj_area = self.blocks.to_crs(utm_crs).geometry.area if not self.blocks.crs.is_projected else self.blocks.geometry.area
         self.blocks['swamp_share'] = (self.blocks['swamp_area'] / blocks_proj_area).fillna(0.0)
 
@@ -246,36 +293,50 @@ class UCMBuilder:
         Привязка плотности водных объектов (реки, озера).
         Рассчитывает суммарную длину рек или площадь озер на кв. км.
         """
-        if water_gdf is None or water_gdf.empty:
+        if 'water_density' not in self.blocks.columns:
             self.blocks['water_density'] = 0.0
+
+        if water_gdf is None or water_gdf.empty:
             return
             
         print("Атрибутирование плотности водных объектов...")
         if self.blocks.crs != water_gdf.crs:
             water_gdf = water_gdf.to_crs(self.blocks.crs)
             
-        # Для простоты считаем пересечение геометрий
         blocks_lite = self.blocks[['block_id', 'geometry']].copy()
-        intersections = gpd.overlay(blocks_lite, water_gdf, how='intersection', keep_geom_type=False)
+        water_poly = water_gdf[water_gdf.geometry.type.isin(['Polygon', 'MultiPolygon'])]
+        water_line = water_gdf[water_gdf.geometry.type.isin(['LineString', 'MultiLineString'])]
         
-        if intersections.empty:
-            self.blocks['water_density'] = 0.0
+        utm_crs = self.blocks.estimate_utm_crs()
+        results = []
+        if not water_poly.empty:
+            inter_poly = gpd.overlay(blocks_lite, water_poly, how='intersection', keep_geom_type=False)
+            if not inter_poly.empty:
+                if not inter_poly.crs.is_projected:
+                    inter_poly = inter_poly.to_crs(utm_crs)
+                inter_poly['water_weight'] = inter_poly.geometry.area
+                results.append(inter_poly[['block_id', 'water_weight']])
+                
+        if not water_line.empty:
+            inter_line = gpd.overlay(blocks_lite, water_line, how='intersection', keep_geom_type=False)
+            if not inter_line.empty:
+                if not inter_line.crs.is_projected:
+                    inter_line = inter_line.to_crs(utm_crs)
+                inter_line['water_weight'] = inter_line.geometry.length * 10.0 # условная ширина 10м
+                results.append(inter_line[['block_id', 'water_weight']])
+        
+        if not results:
             return
             
-        # Считаем "вес" воды: площадь для полигонов, длина * 10м для линий
-        def get_water_weight(geom):
-            if geom.type in ['Polygon', 'MultiPolygon']:
-                return geom.area
-            else:
-                return geom.length * 10.0 # условная ширина 10м
-                
-        intersections['water_weight'] = intersections.geometry.apply(get_water_weight)
+        intersections = pd.concat(results)
         water_weight = intersections.groupby('block_id')['water_weight'].sum().reset_index()
         
+        if 'water_density' in self.blocks.columns:
+            self.blocks = self.blocks.drop(columns=['water_density'])
+            
         self.blocks = self.blocks.merge(water_weight, on='block_id', how='left')
         self.blocks['water_weight'] = self.blocks['water_weight'].fillna(0.0)
         
-        utm_crs = self.blocks.estimate_utm_crs()
         blocks_proj_area = self.blocks.to_crs(utm_crs).geometry.area if not self.blocks.crs.is_projected else self.blocks.geometry.area
         self.blocks['water_density'] = (self.blocks['water_weight'] / blocks_proj_area).fillna(0.0)
 

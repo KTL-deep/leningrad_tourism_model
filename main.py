@@ -1,6 +1,12 @@
 import sys
 import os
 
+# Отключаем прокси для предотвращения ошибок SOCKS в средах с настроенными, 
+# но не поддерживаемыми прокси-серверами (Missing dependencies for SOCKS support).
+os.environ['HTTP_PROXY'] = ''
+os.environ['HTTPS_PROXY'] = ''
+os.environ['NO_PROXY'] = '*'
+
 # Добавляем корень проекта в sys.path, чтобы избежать ошибки ModuleNotFoundError 
 # и запускать скрипт без костылей вроде $env:PYTHONPATH="."
 sys.path.insert(0, os.path.abspath(os.path.dirname(__file__)))
@@ -155,7 +161,7 @@ def generate_ucm(region_names: list, output_path: str = "data/processed/ucm_bloc
             # Вычисляем матрицу между всеми блоками
             acc_matrix = iduedu.get_adj_matrix_gdf_to_gdf(
                 gdf_from=blocks_for_matrix,
-                gft_to=blocks_for_matrix,
+                gdf_to=blocks_for_matrix,
                 nx_graph=intermodal_graph,
                 weight='time_min',
                 dtype=np.float32
@@ -214,6 +220,8 @@ def generate_ucm(region_names: list, output_path: str = "data/processed/ucm_bloc
     return
 
 if __name__ == "__main__":
+    import time
+    script_start = time.time()
     # Пилотный полигон для валидации модели:
     # Сами города, а не целые районы, чтобы избежать таймаутов OSM и получить детальную сетку
     pilot_regions = [
@@ -221,3 +229,7 @@ if __name__ == "__main__":
         "Гатчина, Ленинградская область, Россия"
     ]
     generate_ucm(region_names=pilot_regions)
+    
+    elapsed = time.time() - script_start
+    print(f"\n⏱️ Полное время работы скрипта main.py: {elapsed:.2f} сек. ({elapsed/60:.2f} мин.)")
+

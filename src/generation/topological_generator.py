@@ -103,7 +103,10 @@ class TopologicalGenerator:
         try:
             hubs_gdf = ox.features_from_polygon(query_poly, hubs_tags)
             # Оставляем только точечные объекты (центроиды станций)
-            hubs_gdf['geometry'] = hubs_gdf.geometry.centroid
+            # Перепроецируем для корректного расчета центроида
+            if not hubs_gdf.empty:
+                local_crs = hubs_gdf.estimate_utm_crs()
+                hubs_gdf['geometry'] = hubs_gdf.to_crs(local_crs).geometry.centroid.to_crs(epsg=4326)
             hubs_gdf = hubs_gdf.reset_index(drop=True)
             return hubs_gdf[['geometry']]
         except Exception as e:
