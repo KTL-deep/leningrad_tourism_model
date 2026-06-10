@@ -22,74 +22,90 @@ class TopologicalGenerator:
         """
         Скачивает линии дорог, железных дорог и водных объектов через OSMnx
         для использования их в качестве барьеров при нарезке.
-        Реализует переменный масштаб сетки: вблизи ТПУ сохраняются все дороги,
-        в удаленных зонах — только магистральные.
         """
         print("Скачивание физических барьеров с учетом переменного масштаба...")
         
-        query_poly = self.boundary_gdf.unary_union
+        # Настраиваем OSMnx
+        ox.settings.requests_timeout = 600
+        # Пытаемся использовать альтернативный сервер Overpass при сбоях основного
+        # ox.settings.overpass_url = "https://overpass.kumi.systems/api/interpreter"
+            
         hubs_gdf = self._fetch_hubs()
         
-        # 1. Дороги
-        roads_tags = {
-            'highway': ['motorway', 'trunk', 'primary', 'secondary', 'tertiary', 
-                        'unclassified', 'residential']
-        }
-        try:
-            all_roads = ox.features_from_polygon(query_poly, roads_tags)
-            all_roads = all_roads[all_roads.geometry.type.isin(['LineString', 'MultiLineString'])]
-            all_roads = all_roads.reset_index(drop=True)
+        roads_list = []
+        # Фильтрация дорог: для BlocksNet нужны LineString
+        # Мы фечим граф, так как это надежнее для дорожной сети
+        for poly in self.boundary_gdf.geometry:
+            try:
+                print(f"  Загрузка графа дорог для части территории...")
+                # Fetching ALL roads as a graph first (more robust)
+                G = ox.graph_from_polygon(poly, network_type='all', simplify=True, retain_all=True)
+                _, edges = ox.graph_to_gdfs(G)
+                
+                # Фильтруем типы дорог, которые нам нужны как барьеры
+                keep_highways = [
+                    'motorway', 'trunk', 'primary', 'secondary', 'tertiary', 
+                    'unclassified', 'residential', 'living_street', 'service'
+                ]
+                if 'highway' in edges.columns:
+                    edges = edges[edges['highway'].apply(
+                        lambda x: any(h in x for h in keep_highways) if isinstance(x, list) else x in keep_highways
+                    )]
+                
+                roads_list.append(edges)
+            except Exception as e:
+                print(f"  [!] Ошибка загрузки графа дорог: {e}. Пробуем features_from_polygon...")
+                try:
+                    f_roads = ox.features_from_polygon(poly, {'highway': True})
+                    f_roads = f_roads[f_roads.geometry.type.isin(['LineString', 'MultiLineString'])]
+                    roads_list.append(f_roads)
+                except Exception as e2:
+                    print(f"  [!] Критическая ошибка загрузки дорог: {e2}")
+
+        roads_gdf = pd.concat(roads_list, ignore_index=True) if roads_list else None
+        
+        # Применяем фильтр переменного масштаба (буфер вокруг ТПУ)
+        if roads_gdf is not None and hubs_gdf is not None and not hubs_gdf.empty:
+            print("Применение фильтрации дорог для переменного масштаба...")
+            local_crs = self.boundary_gdf.estimate_utm_crs()
+            hubs_proj = hubs_gdf.to_crs(local_crs)
+            hubs_buffer = hubs_proj.buffer(3000).to_crs(epsg=4326).union_all()
             
-            if hubs_gdf is not None and not hubs_gdf.empty:
-                print("Применение фильтрации дорог для переменного масштаба...")
-                # Создаем буферную зону вокруг ТПУ (например, 5 км)
-                # Переводим в метрическую проекцию для точного буфера
-                local_crs = self.boundary_gdf.estimate_utm_crs()
-                hubs_proj = hubs_gdf.to_crs(local_crs)
-                hubs_buffer = hubs_proj.buffer(5000).to_crs(epsg=4326).unary_union
-                
-                # Магистральные дороги (сохраняем везде)
-                major_highways = ['motorway', 'trunk', 'primary']
-                
-                def should_keep(row):
-                    # Если дорога магистральная - оставляем
-                    if row['highway'] in major_highways:
-                        return True
-                    # Если дорога вблизи ТПУ - оставляем
-                    if row.geometry.intersects(hubs_buffer):
-                        return True
-                    # Иначе отбрасываем для укрупнения блоков в лесах
-                    return False
-                
-                all_roads['keep'] = all_roads.apply(should_keep, axis=1)
-                roads_gdf = all_roads[all_roads['keep']].drop(columns=['keep']).copy()
-                print(f"  Дороги отфильтрованы: {len(all_roads)} -> {len(roads_gdf)}")
-            else:
-                roads_gdf = all_roads
-                
-        except Exception as e:
-            print(f"  [!] Ошибка при загрузке дорог: {e}")
-            roads_gdf = None
+            major_highways = ['motorway', 'trunk', 'primary', 'secondary']
+            
+            def should_keep(row):
+                hw = row.get('highway')
+                if isinstance(hw, list):
+                    if any(h in major_highways for h in hw): return True
+                elif hw in major_highways:
+                    return True
+                return row.geometry.intersects(hubs_buffer)
+            
+            roads_gdf['keep'] = roads_gdf.apply(should_keep, axis=1)
+            roads_gdf = roads_gdf[roads_gdf['keep']].drop(columns=['keep']).copy()
+            print(f"  Дороги отфильтрованы. Осталось: {len(roads_gdf)}")
 
-        # 2. Железные дороги (всегда сохраняем как важные барьеры)
+        # 2. Железные дороги
+        rail_list = []
         rail_tags = {'railway': ['rail', 'light_rail', 'narrow_gauge']}
-        try:
-            rail_gdf = ox.features_from_polygon(query_poly, rail_tags)
-            rail_gdf = rail_gdf[rail_gdf.geometry.type.isin(['LineString', 'MultiLineString'])]
-            rail_gdf = rail_gdf.reset_index(drop=True)
-        except Exception as e:
-            print(f"  [!] Ошибка при загрузке ж/д: {e}")
-            rail_gdf = None
+        for poly in self.boundary_gdf.geometry:
+            try:
+                f_rail = ox.features_from_polygon(poly, rail_tags)
+                f_rail = f_rail[f_rail.geometry.type.isin(['LineString', 'MultiLineString'])]
+                rail_list.append(f_rail)
+            except: pass
+        rail_gdf = pd.concat(rail_list, ignore_index=True) if rail_list else None
 
-        # 3. Водные объекты (реки)
+        # 3. Водные объекты
+        water_list = []
         water_tags = {'waterway': ['river', 'stream', 'canal']}
-        try:
-            water_gdf = ox.features_from_polygon(query_poly, water_tags)
-            water_gdf = water_gdf[water_gdf.geometry.type.isin(['LineString', 'MultiLineString', 'Polygon', 'MultiPolygon'])]
-            water_gdf = water_gdf.reset_index(drop=True)
-        except Exception as e:
-            print(f"  [!] Ошибка при загрузке водных объектов: {e}")
-            water_gdf = None
+        for poly in self.boundary_gdf.geometry:
+            try:
+                f_water = ox.features_from_polygon(poly, water_tags)
+                f_water = f_water[f_water.geometry.type.isin(['LineString', 'MultiLineString', 'Polygon', 'MultiPolygon'])]
+                water_list.append(f_water)
+            except: pass
+        water_gdf = pd.concat(water_list, ignore_index=True) if water_list else None
 
         return roads_gdf, rail_gdf, water_gdf
 

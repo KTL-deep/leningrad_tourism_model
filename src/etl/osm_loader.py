@@ -15,17 +15,17 @@ class OSMLoader:
     
     def __init__(self, locations=None):
         """
-        :param locations: Строка или список строк с названиями локаций.
-                          Например: ["Гатчинский район, Ленинградская область", "Пушкинский район, Санкт-Петербург"]
+        :param locations: Строка или список строк с названиями локаций, или словари для структурированных запросов.
+                          Например: ["Гатчинский район, Ленинградская область", {"city": "Pushkin", "state": "Saint Petersburg"}]
         """
         if locations is None:
             locations = ["Ленинградская область, Россия"]
         
         # Убедимся, что locations всегда список для удобства обработки
-        if isinstance(locations, str):
+        if isinstance(locations, (str, dict)):
             self.locations = [locations]
         else:
-            self.locations = locations
+            self.locations = list(locations)
         
         # Настраиваем osmnx: увеличиваем таймаут для больших запросов
         # Для совместимости с новыми и старыми версиями osmnx
@@ -33,6 +33,23 @@ class OSMLoader:
             ox.settings.requests_timeout = 200
         else:
             ox.settings.timeout = 200
+
+    def _resolve_loc(self, loc):
+        """
+        Разрешает элемент локации в (query_value, which_result).
+        Элемент может быть строкой, словарем (структурированный запрос или с ключами query/which_result).
+        """
+        if isinstance(loc, dict):
+            # Копируем словарь, чтобы не изменять исходные данные пользователя при pop/изменениях
+            loc_copy = loc.copy()
+            if "query" in loc_copy:
+                return loc_copy["query"], loc_copy.get("which_result", 1)
+            which = loc_copy.pop("which_result", 1) if "which_result" in loc_copy else 1
+            return loc_copy, which
+        elif isinstance(loc, tuple):
+            return loc[0], loc[1]
+        else:
+            return loc, 1
         
     def get_boundary(self) -> gpd.GeoDataFrame:
         """
@@ -42,7 +59,8 @@ class OSMLoader:
         gdfs = []
         for loc in self.locations:
             try:
-                gdf = ox.geocode_to_gdf(loc)
+                q, which = self._resolve_loc(loc)
+                gdf = ox.geocode_to_gdf(q, which_result=which)
                 gdfs.append(gdf[['geometry', 'display_name']])
             except Exception as e:
                 print(f"Ошибка загрузки границ для {loc}: {e}")
@@ -51,8 +69,6 @@ class OSMLoader:
             raise ValueError("Не удалось загрузить ни одной границы.")
             
         combined_gdf = pd.concat(gdfs, ignore_index=True)
-        # Объединяем геометрии в единый мультиполигон, если участков несколько
-        # Но для дальнейшей работы лучше оставить GeoDataFrame с несколькими строками или объединить через unary_union
         return combined_gdf
 
     def get_land_use(self, boundary_poly=None) -> gpd.GeoDataFrame:
@@ -68,15 +84,18 @@ class OSMLoader:
         }
         
         if boundary_poly is not None:
-            # Используем unary_union для покрытия всей области
-            query_poly = boundary_poly.unary_union
+            # Используем union_all() с fallback на unary_union
+            try:
+                query_poly = boundary_poly.union_all()
+            except AttributeError:
+                query_poly = boundary_poly.unary_union
             lu_gdf = ox.features_from_polygon(query_poly, tags)
         else:
-            # Если полигон не передан, запрашиваем по списку локаций
             gdfs = []
             for loc in self.locations:
                 try:
-                    gdfs.append(ox.features_from_place(loc, tags))
+                    q, _ = self._resolve_loc(loc)
+                    gdfs.append(ox.features_from_place(q, tags))
                 except Exception as e:
                     print(f"Ошибка загрузки POI для {loc}: {e}")
             lu_gdf = pd.concat(gdfs, ignore_index=True) if gdfs else gpd.GeoDataFrame()
@@ -88,7 +107,6 @@ class OSMLoader:
         Загрузка зданий и инфраструктурных объектов для атрибутирования блоков.
         """
         print("Загрузка объектов для классификации (Еда, Жилье, Транспорт, Культура)...")
-        # Оптимизация: вместо True используем конкретные типы, чтобы не качать жилые дома, ларьки и сараи
         tags = {
             'amenity': ['cafe', 'restaurant', 'fast_food', 'bar', 'pub', 'food_court', 'hospital', 'clinic'], 
             'tourism': ['hotel', 'motel', 'hostel', 'guest_house', 'camp_site', 'museum', 'gallery', 'attraction', 'viewpoint', 'information'],
@@ -100,12 +118,21 @@ class OSMLoader:
         }
         
         if boundary_poly is not None:
-            query_poly = boundary_poly.envelope
+            # Для надежности берем envelope объединения границ
+            try:
+                query_poly = boundary_poly.union_all().envelope
+            except AttributeError:
+                query_poly = boundary_poly.unary_union.envelope
             amenities_gdf = ox.features_from_polygon(query_poly, tags)
         else:
             gdfs = []
             for loc in self.locations:
-                gdfs.append(ox.features_from_place(loc, tags))
+                try:
+                    q, _ = self._resolve_loc(loc)
+                    amenities_gdf = ox.features_from_place(q, tags)
+                    gdfs.append(amenities_gdf)
+                except Exception as e:
+                    print(f"Ошибка загрузки POI для {loc}: {e}")
             amenities_gdf = pd.concat(gdfs, ignore_index=True) if gdfs else gpd.GeoDataFrame()
             
         if not amenities_gdf.empty:
@@ -125,18 +152,23 @@ class OSMLoader:
         """
         Загрузка транспортного графа для территории.
         network_type: 'drive', 'walk', 'all', etc.
-        Возвращает объект networkx.MultiDiGraph
         """
         print(f"Загрузка графа дорог (тип: {network_type})...")
         if boundary_poly is not None:
-            # Для надежности используем буфер или исходный полигон
-            G = ox.graph_from_polygon(boundary_poly, network_type=network_type, simplify=True)
+            try:
+                query_poly = boundary_poly.union_all()
+            except AttributeError:
+                query_poly = boundary_poly.unary_union
+            G = ox.graph_from_polygon(query_poly, network_type=network_type, simplify=True)
         else:
             if len(self.locations) == 1:
-                G = ox.graph_from_place(self.locations[0], network_type=network_type, simplify=True)
+                q, _ = self._resolve_loc(self.locations[0])
+                G = ox.graph_from_place(q, network_type=network_type, simplify=True)
             else:
-                # Если локаций много, лучше скачивать по полигонам, поэтому запросим их
                 temp_bounds = self.get_boundary()
-                merged_poly = temp_bounds.unary_union
+                try:
+                    merged_poly = temp_bounds.union_all()
+                except AttributeError:
+                    merged_poly = temp_bounds.unary_union
                 G = ox.graph_from_polygon(merged_poly, network_type=network_type, simplify=True)
         return G

@@ -79,13 +79,13 @@ def generate_ucm(region_names: list, output_path: str = "data/processed/ucm_bloc
     
     # Дополнительные слои для атрибутирования
     try:
-        land_use_gdf = osm.get_land_use()
+        land_use_gdf = osm.get_land_use(boundary_poly=boundary_gdf)
         _safe_export(land_use_gdf, "data/processed/osm/landuse.geojson")
     except:
         land_use_gdf = gpd.GeoDataFrame()
         
     try:
-        amenities_gdf = osm.get_amenities_and_buildings()
+        amenities_gdf = osm.get_amenities_and_buildings(boundary_poly=boundary_gdf)
         _safe_export(amenities_gdf, "data/processed/osm/amenities_buildings.geojson")
     except:
         amenities_gdf = gpd.GeoDataFrame()
@@ -223,10 +223,10 @@ if __name__ == "__main__":
     import time
     script_start = time.time()
     # Пилотный полигон для валидации модели:
-    # Сами города, а не целые районы, чтобы избежать таймаутов OSM и получить детальную сетку
+    # Используем более точные названия для охвата всей территории городов
     pilot_regions = [
-        "Пушкин, Санкт-Петербург, Россия",
-        "Гатчина, Ленинградская область, Россия"
+        {"city": "Pushkin", "state": "Saint Petersburg"},
+        "Gatchina, Leningrad Oblast, Russia"
     ]
     generate_ucm(region_names=pilot_regions)
     
