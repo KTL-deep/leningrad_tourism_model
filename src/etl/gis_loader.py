@@ -49,15 +49,8 @@ class GISLoader:
         :param region_code: Код региона (47 — Ленинградская область)
         :return: GeoDataFrame с точечными объектами ОКН
         """
-        # Открытый датасет ОКН на портале data.gov.ru / mkrf.ru
-        # Документация: https://opendata.mkrf.ru/opendata/7705851331-egrkn
-        api_url = (
-            "https://opendata.mkrf.ru/opendata/7705851331-egrkn/"
-            f"meta.json"
-        )
-        rows = []
         try:
-            print("  Загрузка реестра ОКН через opendata.mkrf.ru...")
+            print("  Загрузка реестра ОКН через opendata.mkrf.ru (github mirror)...")
             # Пробуем альтернативный источник — EGRKN CSV (публичный датасет)
             csv_url = (
                 "https://raw.githubusercontent.com/opendata-mkrf/"

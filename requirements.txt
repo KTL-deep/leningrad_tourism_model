@@ -1,3 +1,4 @@
+blocksnet  # устанавливать с --no-deps во избежание конфликта numpy (pip install blocksnet --no-deps)
 geopandas>=1.1.0
 pandas>=2.3.0,<3.0.0
 numpy>=1.26.0

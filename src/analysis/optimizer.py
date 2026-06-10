@@ -208,18 +208,20 @@ def run_optimization(
         # Сохраняем результаты
         target_lu_names = [land_use_types[i] for i in best_state]
         blocks_gdf[f"Target_LandUse_{scenario}"] = target_lu_names
-        
-        # Считаем Capacity
+
+        # Считаем Capacity.
+        # Используем enumerate, чтобы позиционный индекс pos корректно
+        # соответствовал best_state[pos] — не зависит от значений индекса DataFrame.
         capacities = []
-        for idx, row in blocks_gdf.iterrows():
-            lu_type = target_lu_names[idx]
-            lu_idx = best_state[idx]
-            s_ik_score = s_ik_matrix[idx, lu_idx]
-            
-            area_m2 = areas_ha.iloc[idx] * 10000.0
+        for pos, (_, row) in enumerate(blocks_gdf.iterrows()):
+            lu_idx = int(best_state[pos])
+            lu_type = land_use_types[lu_idx]
+            s_ik_score = float(s_ik_matrix[pos, lu_idx])
+
+            area_m2 = float(areas_ha.iloc[pos]) * 10000.0
             cap = calculate_capacity(area_m2, lu_type, s_ik_score)
             capacities.append(round(cap, 2))
-            
+
         blocks_gdf[f"Capacity_{scenario}"] = capacities
     
     logging.info(f"Saving optimized blocks to {output_geojson}")

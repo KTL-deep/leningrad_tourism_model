@@ -24,12 +24,15 @@ class TopologicalGenerator:
         для использования их в качестве барьеров при нарезке.
         """
         print("Скачивание физических барьеров с учетом переменного масштаба...")
-        
-        # Настраиваем OSMnx
+
+        # Применяем выбранный Overpass-сервер
+        import os as _os
+        overpass_url = _os.environ.get("OVERPASS_URL")
+        if overpass_url and hasattr(ox.settings, "overpass_url"):
+            ox.settings.overpass_url = overpass_url
+
         ox.settings.requests_timeout = 600
-        # Пытаемся использовать альтернативный сервер Overpass при сбоях основного
-        # ox.settings.overpass_url = "https://overpass.kumi.systems/api/interpreter"
-            
+
         hubs_gdf = self._fetch_hubs()
         
         roads_list = []
@@ -93,7 +96,8 @@ class TopologicalGenerator:
                 f_rail = ox.features_from_polygon(poly, rail_tags)
                 f_rail = f_rail[f_rail.geometry.type.isin(['LineString', 'MultiLineString'])]
                 rail_list.append(f_rail)
-            except: pass
+            except Exception as e:
+                print(f"  [!] Ошибка загрузки ж/д данных: {e}")
         rail_gdf = pd.concat(rail_list, ignore_index=True) if rail_list else None
 
         # 3. Водные объекты
@@ -104,7 +108,8 @@ class TopologicalGenerator:
                 f_water = ox.features_from_polygon(poly, water_tags)
                 f_water = f_water[f_water.geometry.type.isin(['LineString', 'MultiLineString', 'Polygon', 'MultiPolygon'])]
                 water_list.append(f_water)
-            except: pass
+            except Exception as e:
+                print(f"  [!] Ошибка загрузки водных объектов: {e}")
         water_gdf = pd.concat(water_list, ignore_index=True) if water_list else None
 
         return roads_gdf, rail_gdf, water_gdf

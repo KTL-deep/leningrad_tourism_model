@@ -27,12 +27,17 @@ class OSMLoader:
         else:
             self.locations = list(locations)
         
-        # Настраиваем osmnx: увеличиваем таймаут для больших запросов
-        # Для совместимости с новыми и старыми версиями osmnx
+        # Настраиваем osmnx: таймаут и зеркало Overpass
         if hasattr(ox.settings, 'requests_timeout'):
-            ox.settings.requests_timeout = 200
+            ox.settings.requests_timeout = 300
         else:
-            ox.settings.timeout = 200
+            ox.settings.timeout = 300
+
+        # Применяем зеркало Overpass если оно уже выбрано в main.py
+        import os as _os
+        overpass_url = _os.environ.get("OVERPASS_URL")
+        if overpass_url and hasattr(ox.settings, "overpass_url"):
+            ox.settings.overpass_url = overpass_url
 
     def _resolve_loc(self, loc):
         """

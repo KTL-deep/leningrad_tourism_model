@@ -1,44 +1,61 @@
 import sys
 import os
 
-# Отключаем прокси для предотвращения ошибок SOCKS в средах с настроенными, 
-# но не поддерживаемыми прокси-серверами (Missing dependencies for SOCKS support).
-os.environ['HTTP_PROXY'] = ''
-os.environ['HTTPS_PROXY'] = ''
-os.environ['NO_PROXY'] = '*'
-
-# Добавляем корень проекта в sys.path, чтобы избежать ошибки ModuleNotFoundError 
-# и запускать скрипт без костылей вроде $env:PYTHONPATH="."
+# Путь проекта в sys.path — позволяет запускать скрипт напрямую
 sys.path.insert(0, os.path.abspath(os.path.dirname(__file__)))
 
-# Принудительно переключаем вывод на UTF-8, чтобы кириллица корректно
-# отображалась в Windows-терминале и при редиректе в файл/пайп.
+# Отключаем навязчивый FutureWarning от pandera при импорте blocksnet
+os.environ['DISABLE_PANDERA_IMPORT_WARNING'] = 'True'
+
+# Принудительно переключаем вывод на UTF-8 для корректного отображения кириллицы
 try:
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     if hasattr(sys.stderr, "reconfigure"):
         sys.stderr.reconfigure(encoding="utf-8", errors="replace")
-    else:
-        raise AttributeError("stderr has no reconfigure")
 except Exception:
     import io
-
     if hasattr(sys.stdout, "buffer"):
         sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
     if hasattr(sys.stderr, "buffer"):
         sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8", errors="replace")
 
 import geopandas as gpd
+import pandas as pd
+import numpy as np
+
+# Применяем зеркало Overpass и снимаем системные прокси — ДО первого сетевого вызова
+from src.utils.overpass_config import apply_overpass_config
+apply_overpass_config()
 
 from src.etl.osm_loader import OSMLoader
 from src.etl.gis_loader import GISLoader
 from src.generation.topological_generator import TopologicalGenerator
 from src.generation.ucm_builder import UCMBuilder
-import iduedu
-import pandas as pd
-import numpy as np
+
+# ---------------------------------------------------------------------------
+# Константы путей (единое место для изменения)
+# ---------------------------------------------------------------------------
+PROCESSED_DIR   = "data/processed"
+RAW_DIR         = "data/raw"
+
+PATH_BOUNDARY           = f"{PROCESSED_DIR}/osm/boundary.geojson"
+PATH_LANDUSE            = f"{PROCESSED_DIR}/osm/landuse.geojson"
+PATH_AMENITIES          = f"{PROCESSED_DIR}/osm/amenities_buildings.geojson"
+PATH_OKN_GIS            = f"{PROCESSED_DIR}/gis/okn.geojson"
+PATH_OOPT_GIS           = f"{PROCESSED_DIR}/gis/oopt.geojson"
+PATH_TOPO_BLOCKS        = f"{PROCESSED_DIR}/topological_blocks.geojson"
+PATH_UCM_BLOCKS         = f"{PROCESSED_DIR}/ucm_blocks.geojson"
+PATH_DRIVE_GRAPH        = f"{PROCESSED_DIR}/drive_graph_edges.geojson"
+PATH_ACC_MATRIX         = f"{PROCESSED_DIR}/accessibility_matrix.parquet"
+PATH_AHP_SCORES_CSV     = f"{PROCESSED_DIR}/ahp_block_scores.csv"
+PATH_AHP_GEOJSON        = f"{PROCESSED_DIR}/ucm_blocks_with_attractiveness.geojson"
+PATH_OPTIMIZED_GEOJSON  = f"{PROCESSED_DIR}/ucm_blocks_optimized.geojson"
+PATH_AHP_CONSTANTS      = "configs/ahp_constants.json"
+
 
 def _safe_export(gdf: gpd.GeoDataFrame, path: str) -> None:
+    """Экспортирует GeoDataFrame в GeoJSON. При блокировке файла пишет рядом с временны́м суффиксом."""
     if gdf is None or getattr(gdf, "empty", True):
         return
     os.makedirs(os.path.dirname(path), exist_ok=True)
@@ -53,183 +70,216 @@ def _safe_export(gdf: gpd.GeoDataFrame, path: str) -> None:
     except PermissionError:
         # Windows/QGIS часто держит файл открытым: не падаем, а пишем рядом с суффиксом.
         from datetime import datetime
-
         ts = datetime.now().strftime("%Y%m%d-%H%M%S")
         alt_path = f"{path}.locked-{ts}.geojson"
         print(f"⚠️  Не удалось перезаписать {path} (файл занят). Пишем в {alt_path}")
         gdf.to_file(alt_path, driver="GeoJSON")
 
-def generate_ucm(region_names: list, output_path: str = "data/processed/ucm_blocks.geojson"):
+
+def generate_ucm(
+    region_names: list,
+    output_path: str = PATH_UCM_BLOCKS
+) -> None:
     """
     Главный пайплайн генерации UCM.
-    :param region_names: Список названий регионов (например ["Пушкинский район, Санкт-Петербург", "Гатчинский район, Ленинградская область"])
-    :param output_path: Путь для сохранения итогового слоя блоков
+
+    :param region_names: Список названий регионов.
+                         Например: [{"city": "Pushkin", "state": "Saint Petersburg"},
+                                    "Gatchina, Leningrad Oblast, Russia"]
+    :param output_path:  Путь для сохранения итогового слоя блоков.
     """
     import time
     start_time = time.time()
     print(f"=== Запуск сборки UCM для {region_names} ===")
-    
+
+    # ------------------------------------------------------------------
     # 1. Загрузка данных
+    # ------------------------------------------------------------------
     osm = OSMLoader(locations=region_names)
-    gis = GISLoader(data_dir="data/raw")
-    
-    # Получаем базовую геометрию (границы)
-    boundary_gdf = osm.get_boundary()
-    _safe_export(boundary_gdf, "data/processed/osm/boundary.geojson")
-    
-    # Дополнительные слои для атрибутирования
-    try:
-        land_use_gdf = osm.get_land_use(boundary_poly=boundary_gdf)
-        _safe_export(land_use_gdf, "data/processed/osm/landuse.geojson")
-    except:
-        land_use_gdf = gpd.GeoDataFrame()
-        
-    try:
-        amenities_gdf = osm.get_amenities_and_buildings(boundary_poly=boundary_gdf)
-        _safe_export(amenities_gdf, "data/processed/osm/amenities_buildings.geojson")
-    except:
-        amenities_gdf = gpd.GeoDataFrame()
+    gis = GISLoader(data_dir=RAW_DIR)
+
+    if os.path.exists(PATH_BOUNDARY):
+        print(f"Загрузка границ из кэша: {PATH_BOUNDARY}")
+        boundary_gdf = gpd.read_file(PATH_BOUNDARY)
+    else:
+        boundary_gdf = osm.get_boundary()
+        _safe_export(boundary_gdf, PATH_BOUNDARY)
+
+    if os.path.exists(PATH_LANDUSE):
+        print(f"Загрузка землепользования из кэша: {PATH_LANDUSE}")
+        land_use_gdf = gpd.read_file(PATH_LANDUSE)
+    else:
+        try:
+            land_use_gdf = osm.get_land_use(boundary_poly=boundary_gdf)
+            _safe_export(land_use_gdf, PATH_LANDUSE)
+        except Exception as e:
+            print(f"⚠️  Ошибка загрузки землепользования: {e}. Продолжаем с пустым слоем.")
+            land_use_gdf = gpd.GeoDataFrame()
+
+    if os.path.exists(PATH_AMENITIES):
+        print(f"Загрузка POI/объектов из кэша: {PATH_AMENITIES}")
+        amenities_gdf = gpd.read_file(PATH_AMENITIES)
+    else:
+        try:
+            amenities_gdf = osm.get_amenities_and_buildings(boundary_poly=boundary_gdf)
+            _safe_export(amenities_gdf, PATH_AMENITIES)
+        except Exception as e:
+            print(f"⚠️  Ошибка загрузки POI/объектов: {e}. Продолжаем с пустым слоем.")
+            amenities_gdf = gpd.GeoDataFrame()
 
     okn_gdf = gis.load_cultural_heritage()
-    _safe_export(okn_gdf, "data/processed/gis/okn.geojson")
+    _safe_export(okn_gdf, PATH_OKN_GIS)
+
     oopt_gdf = gis.load_protected_areas()
-    _safe_export(oopt_gdf, "data/processed/gis/oopt.geojson")
+    _safe_export(oopt_gdf, PATH_OOPT_GIS)
 
-    # 2. Топологическая генерация блоков (Этап 2)
-    generator = TopologicalGenerator(boundary_gdf=boundary_gdf)
-    blocks_gdf = generator.generate_blocks(min_area_m2=500.0)
-    _safe_export(blocks_gdf, "data/processed/topological_blocks.geojson")
+    # ------------------------------------------------------------------
+    # 2. Топологическая генерация блоков (BlocksNet)
+    # ------------------------------------------------------------------
+    if os.path.exists(PATH_TOPO_BLOCKS):
+        print(f"Загрузка блоков из кэша: {PATH_TOPO_BLOCKS}")
+        blocks_gdf = gpd.read_file(PATH_TOPO_BLOCKS)
+    else:
+        generator = TopologicalGenerator(boundary_gdf=boundary_gdf)
+        blocks_gdf = generator.generate_blocks(min_area_m2=500.0)
+        _safe_export(blocks_gdf, PATH_TOPO_BLOCKS)
 
-    # 3. Атрибутирование блоков (UCM) (Этап 3 - часть старого кода)
+    # ------------------------------------------------------------------
+    # 3. Атрибутирование блоков (UCM)
+    # ------------------------------------------------------------------
     builder = UCMBuilder(blocks_gdf=blocks_gdf)
     builder.attribute_land_use(landuse_gdf=land_use_gdf)
-    
-    # Извлекаем болота и воду для новых факторов
+
     if not land_use_gdf.empty:
         # Болота
         wetlands = land_use_gdf[land_use_gdf.get('natural') == 'wetland']
         builder.attribute_swampiness(wetlands_gdf=wetlands)
-        
+
         # Водные объекты (полигоны и линии)
         water_tags = ['water', 'river', 'stream', 'canal', 'lake']
         is_water = pd.Series(False, index=land_use_gdf.index)
         for tag in ['natural', 'landuse', 'water', 'waterway']:
             if tag in land_use_gdf.columns:
-                is_water |= land_use_gdf[tag].isin(water_tags) | land_use_gdf[tag].notna() if tag in ['water', 'waterway'] else land_use_gdf[tag].isin(water_tags)
-        
+                if tag in ('water', 'waterway'):
+                    is_water |= land_use_gdf[tag].notna()
+                else:
+                    is_water |= land_use_gdf[tag].isin(water_tags)
+
         water_gdf = land_use_gdf[is_water]
         builder.attribute_water_density(water_gdf=water_gdf)
 
     builder.attribute_amenities(amenities_gdf=amenities_gdf)
     builder.attribute_cultural_heritage(okn_gdf=okn_gdf)
     builder.attribute_protected_areas(oopt_gdf=oopt_gdf)
-    
-    # 4. Сохранение
+
+    # ------------------------------------------------------------------
+    # 4. Сохранение UCM
+    # ------------------------------------------------------------------
     builder.export_to_geojson(filepath=output_path)
     print(f"=== Генерация UCM успешно завершена. Файл: {output_path} ===")
 
-    # 5. Матрица доступности (Этап 3)
-    print("\n=== Старт расчета матрицы транспортной доступности ===")
+    # ------------------------------------------------------------------
+    # 5. Матрица транспортной доступности
+    # ------------------------------------------------------------------
+    import iduedu
     import warnings
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore")
-        # iduedu ожидает полигон в EPSG:4326
-        boundary_poly_4326 = boundary_gdf.to_crs(epsg=4326).unary_union
-        
-        matrix_path = "data/processed/accessibility_matrix.parquet"
-        try:
-            # Для ускорения расчетов и избежания блокировок Overpass API (406 Not Acceptable),
-            # мы используем автомобильный граф (Drive Graph) в качестве базового.
-            print("Построение графа дорожной сети (iduedu.get_drive_graph)...")
-            intermodal_graph = iduedu.get_drive_graph(territory=boundary_poly_4326)
-            graph_crs = intermodal_graph.graph.get('crs', 4326)
-            
-            print("Экспорт транспортного графа для дашборда...")
-            import osmnx as ox
-            # iduedu.get_drive_graph возвращает nx.MultiDiGraph
-            edges = ox.graph_to_gdfs(intermodal_graph, nodes=False)
-            _safe_export(edges, "data/processed/drive_graph_edges.geojson")
-            
-            # Центроиды блоков для расчета матрицы
-            blocks_for_matrix = builder.get_ucm().copy()
-            if not blocks_for_matrix.crs.is_projected:
-                blocks_for_matrix = blocks_for_matrix.to_crs(blocks_for_matrix.estimate_utm_crs())
-            blocks_for_matrix['geometry'] = blocks_for_matrix.geometry.centroid
-            blocks_for_matrix = blocks_for_matrix.to_crs(graph_crs)
-            
-            print("Расчет матрицы доступности (get_adj_matrix_gdf_to_gdf)...")
-            # Вычисляем матрицу между всеми блоками
-            acc_matrix = iduedu.get_adj_matrix_gdf_to_gdf(
-                gdf_from=blocks_for_matrix,
-                gdf_to=blocks_for_matrix,
-                nx_graph=intermodal_graph,
-                weight='time_min',
-                dtype=np.float32
-            )
-            acc_matrix.to_parquet(matrix_path)
-            print(f"=== Матрица доступности успешно сохранена: {matrix_path} ===")
-        except Exception as e:
-            print(f"⚠️ Ошибка при построении графа или матрицы: {e}")
-            print("Использование евклидова расстояния в качестве заглушки...")
-            blocks_for_matrix = builder.get_ucm().copy()
-            if not blocks_for_matrix.crs.is_projected:
-                blocks_for_matrix = blocks_for_matrix.to_crs(blocks_for_matrix.estimate_utm_crs())
-            
-            # Создаем матрицу расстояний (в метрах)
-            centroids = blocks_for_matrix.geometry.centroid
-            n = len(centroids)
-            dist_matrix = np.zeros((n, n), dtype=np.float32)
-            for i in range(n):
-                for j in range(n):
-                    dist_matrix[i, j] = centroids.iloc[i].distance(centroids.iloc[j]) / 1000.0 * 10.0 # примерное время в мин
-            
-            ids = blocks_for_matrix.index.astype(str)
-            acc_matrix = pd.DataFrame(dist_matrix, index=ids, columns=ids)
-            acc_matrix.to_parquet(matrix_path)
-            print(f"=== Матрица (Евклид) сохранена: {matrix_path} ===")
 
-    # 6. Сценарное взвешивание AHP (Этап 4)
-    print("\n=== Старт сценарного взвешивания (AHP) ===")
-    from src.analysis.ahp import run_stage2_ahp
+    print("\n=== Старт расчета матрицы транспортной доступности ===")
+    
+    if os.path.exists(PATH_ACC_MATRIX):
+        print(f"Загрузка матрицы доступности из кэша: {PATH_ACC_MATRIX}")
+        if os.path.exists(PATH_DRIVE_GRAPH):
+            print(f"Дорожный граф уже существует: {PATH_DRIVE_GRAPH}")
+    else:
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            boundary_poly_4326 = boundary_gdf.to_crs(epsg=4326).unary_union
+
+            try:
+                print("Построение графа дорожной сети (iduedu.get_drive_graph)...")
+                intermodal_graph = iduedu.get_drive_graph(territory=boundary_poly_4326)
+                graph_crs = intermodal_graph.graph.get('crs', 4326)
+
+                print("Экспорт транспортного графа для дашборда...")
+                import osmnx as ox
+                edges = ox.graph_to_gdfs(intermodal_graph, nodes=False)
+                _safe_export(edges, PATH_DRIVE_GRAPH)
+
+                blocks_for_matrix = builder.get_ucm().copy()
+                if not blocks_for_matrix.crs.is_projected:
+                    blocks_for_matrix = blocks_for_matrix.to_crs(blocks_for_matrix.estimate_utm_crs())
+                blocks_for_matrix['geometry'] = blocks_for_matrix.geometry.centroid
+                blocks_for_matrix = blocks_for_matrix.to_crs(graph_crs)
+
+                print("Расчет матрицы доступности (get_adj_matrix_gdf_to_gdf)...")
+                acc_matrix = iduedu.get_adj_matrix_gdf_to_gdf(
+                    gdf_from=blocks_for_matrix,
+                    gdf_to=blocks_for_matrix,
+                    nx_graph=intermodal_graph,
+                    weight='time_min',
+                    dtype=np.float32
+                )
+                acc_matrix.to_parquet(PATH_ACC_MATRIX)
+                print(f"=== Матрица доступности успешно сохранена: {PATH_ACC_MATRIX} ===")
+
+            except Exception as e:
+                print(f"⚠️ Ошибка при построении графа или матрицы: {e}")
+                print("Использование евклидова расстояния в качестве заглушки...")
+                blocks_for_matrix = builder.get_ucm().copy()
+                if not blocks_for_matrix.crs.is_projected:
+                    blocks_for_matrix = blocks_for_matrix.to_crs(blocks_for_matrix.estimate_utm_crs())
+
+                centroids = blocks_for_matrix.geometry.centroid
+                n = len(centroids)
+                dist_matrix = np.zeros((n, n), dtype=np.float32)
+                for i in range(n):
+                    for j in range(n):
+                        # Приблизительное время в минутах (1 км ≈ 10 мин)
+                        dist_matrix[i, j] = centroids.iloc[i].distance(centroids.iloc[j]) / 1000.0 * 10.0
+
+                ids = blocks_for_matrix.index.astype(str)
+                acc_matrix = pd.DataFrame(dist_matrix, index=ids, columns=ids)
+                acc_matrix.to_parquet(PATH_ACC_MATRIX)
+                print(f"=== Матрица (Евклид) сохранена: {PATH_ACC_MATRIX} ===")
+
+    # ------------------------------------------------------------------
+    # 6. Сценарное взвешивание AHP
+    # ------------------------------------------------------------------
     from pathlib import Path
-    
-    ahp_csv_out = Path("data/processed/ahp_block_scores.csv")
-    ahp_geojson_out = Path("data/processed/ucm_blocks_with_attractiveness.geojson")
-    
+    from src.analysis.ahp import run_stage2_ahp
+
+    print("\n=== Старт сценарного взвешивания (AHP) ===")
     run_stage2_ahp(
         blocks_path=Path(output_path),
-        constants_path=Path("configs/ahp_constants.json"),
-        output_csv=ahp_csv_out,
-        output_geojson=ahp_geojson_out
+        constants_path=Path(PATH_AHP_CONSTANTS),
+        output_csv=Path(PATH_AHP_SCORES_CSV),
+        output_geojson=Path(PATH_AHP_GEOJSON),
     )
-    
-    # 7. Глобальная оптимизация (Этап 5)
-    print("\n=== Старт пространственной оптимизации (Simulated Annealing) ===")
+
+    # ------------------------------------------------------------------
+    # 7. Глобальная оптимизация (Simulated Annealing)
+    # ------------------------------------------------------------------
     from src.analysis.optimizer import run_optimization
-    
-    opt_geojson_out = Path("data/processed/ucm_blocks_optimized.geojson")
+
+    print("\n=== Старт пространственной оптимизации (Simulated Annealing) ===")
     run_optimization(
-        blocks_path=ahp_geojson_out,
-        acc_matrix_path=Path(matrix_path),
-        output_geojson=opt_geojson_out,
-        max_iter=50000
+        blocks_path=Path(PATH_AHP_GEOJSON),
+        acc_matrix_path=Path(PATH_ACC_MATRIX),
+        output_geojson=Path(PATH_OPTIMIZED_GEOJSON),
+        max_iter=50000,
     )
-    
-    elapsed_time = time.time() - start_time
-    print(f"=== Выполнение скрипта завершено. Общее время: {elapsed_time:.2f} секунд ===")
-    return
+
+    elapsed = time.time() - start_time
+    print(f"=== Выполнение завершено. Общее время: {elapsed:.2f} сек. ({elapsed / 60:.2f} мин.) ===")
+
 
 if __name__ == "__main__":
     import time
     script_start = time.time()
-    # Пилотный полигон для валидации модели:
-    # Используем более точные названия для охвата всей территории городов
+
+    # Пилотный полигон: Пушкин + Гатчина
     pilot_regions = [
         {"city": "Pushkin", "state": "Saint Petersburg"},
-        "Gatchina, Leningrad Oblast, Russia"
+        "Gatchina, Leningrad Oblast, Russia",
     ]
     generate_ucm(region_names=pilot_regions)
-    
-    elapsed = time.time() - script_start
-    print(f"\n⏱️ Полное время работы скрипта main.py: {elapsed:.2f} сек. ({elapsed/60:.2f} мин.)")
-
