@@ -33,7 +33,8 @@ class SimulatedAnnealingOptimizer:
         land_use_types: list[str],
         areas_ha: np.ndarray,
         lambda_dist: float = 0.5,
-        lambda_cap: float = 1.0
+        lambda_cap: float = 1.0,
+        capacity_multiplier: float = 1.0
     ):
         """
         Инициализация оптимизатора.
@@ -43,6 +44,7 @@ class SimulatedAnnealingOptimizer:
         :param areas_ha: Площади блоков в гектарах
         :param lambda_dist: Вес пространственной синергии
         :param lambda_cap: Вес штрафа за превышение емкости (Carrying Capacity)
+        :param capacity_multiplier: Множитель пиковой нагрузки
         """
         self.s_ik = s_ik_matrix
         self.acc_matrix = acc_matrix
@@ -51,10 +53,11 @@ class SimulatedAnnealingOptimizer:
         self.areas_ha = areas_ha
         self.lambda_dist = lambda_dist
         self.lambda_cap = lambda_cap
-        
+        self.capacity_multiplier = capacity_multiplier
+
         self.dist_utility = 1.0 / (self.acc_matrix + 1.0)
         np.fill_diagonal(self.dist_utility, 0.0)
-        
+
         # Расчет предельной экологической емкости (Placeholder для Carrying Capacity)
         # В реальности зависит от okn_count, forest_share и т.д.
         self.max_carrying_capacity = self.areas_ha * 1000.0 # 1000 чел/га как абсолютный предел
