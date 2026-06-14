@@ -114,6 +114,6 @@ class SberIndexLoader:
 #     trend = loader.get_regional_trend()
 #     seasonality = loader.get_seasonality_profile()
 #     capacity_mult = loader.calculate_capacity_multiplier()
-#     
+#
 #     print(f"Тренд Ленобласти: {trend}% г/г")
 #     print(f"Множитель пиковой нагрузки: {capacity_mult}")

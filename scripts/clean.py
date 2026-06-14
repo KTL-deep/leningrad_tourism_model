@@ -25,7 +25,7 @@ def clear_temp_files():
             
     # Восстанавливаем базовую структуру, чтобы скриптам не приходилось делать это самим
     os.makedirs("data/processed/osm", exist_ok=True)
-    os.makedirs("data/processed/gis", exist_ok=True)
+    os.makedirs("../data/processed/gis/gis", exist_ok=True)
     os.makedirs("cache", exist_ok=True)
     
     print("✅ Восстановлена базовая структура папок (data/processed/*).")

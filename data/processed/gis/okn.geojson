@@ -9,6 +9,16 @@
 { "type": "Feature", "properties": { "id": 4.0 }, "geometry": { "type": "Point", "coordinates": [ 29.641535880664946, 60.256974152048819 ] } },
 { "type": "Feature", "properties": { "id": 5.0 }, "geometry": { "type": "Point", "coordinates": [ 29.647131824441214, 60.262444458303158 ] } },
 { "type": "Feature", "properties": { "id": 6.0 }, "geometry": { "type": "Point", "coordinates": [ 29.600773270608393, 60.248576406087558 ] } },
-{ "type": "Feature", "properties": { "id": 7.0 }, "geometry": { "type": "Point", "coordinates": [ 29.578389495503309, 60.249420361207086 ] } }
+{ "type": "Feature", "properties": { "id": 7.0 }, "geometry": { "type": "Point", "coordinates": [ 29.578389495503309, 60.249420361207086 ] } },
+{ "type": "Feature", "properties": { "id": 1.0 }, "geometry": { "type": "Point", "coordinates": [ 30.407124080778672, 59.720297609948638 ] } },
+{ "type": "Feature", "properties": { "id": 1.0 }, "geometry": { "type": "Point", "coordinates": [ 30.419468074402747, 59.724336121832337 ] } },
+{ "type": "Feature", "properties": { "id": 1.0 }, "geometry": { "type": "Point", "coordinates": [ 30.416999275677934, 59.716479938146165 ] } },
+{ "type": "Feature", "properties": { "id": 1.0 }, "geometry": { "type": "Point", "coordinates": [ 30.42725850593439, 59.723036106152612 ] } },
+{ "type": "Feature", "properties": { "id": 1.0 }, "geometry": { "type": "Point", "coordinates": [ 30.41842912160606, 59.723229728711338 ] } },
+{ "type": "Feature", "properties": { "id": 1.0 }, "geometry": { "type": "Point", "coordinates": [ 30.420623609361456, 59.724073356779776 ] } },
+{ "type": "Feature", "properties": { "id": 1.0 }, "geometry": { "type": "Point", "coordinates": [ 30.419060036835734, 59.723219356102682 ] } },
+{ "type": "Feature", "properties": { "id": 1.0 }, "geometry": { "type": "Point", "coordinates": [ 30.398082105448953, 59.71570874322105 ] } },
+{ "type": "Feature", "properties": { "id": 1.0 }, "geometry": { "type": "Point", "coordinates": [ 30.399453660296075, 59.715293743080125 ] } },
+{ "type": "Feature", "properties": { "id": 1.0 }, "geometry": { "type": "Point", "coordinates": [ 30.403362591610382, 59.713516100901501 ] } }
 ]
 }

@@ -1,6 +1,6 @@
 # 🗺️ Leningrad Tourism Model (Предиктивная модель мастер-планирования)
 
-![Python Version](https://img.shields.io/badge/python-3.10%2B-blue)
+![Python Version](https://img.shields.io/badge/python-3.12-blue)
 ![BlocksNet](https://img.shields.io/badge/powered%20by-BlocksNet-orange)
 ![Streamlit](https://img.shields.io/badge/UI-Streamlit-red)
 ![License](https://img.shields.io/badge/license-MIT-green)
@@ -50,26 +50,42 @@
 
 ```text
 leningrad_tourism_model/
+├── main.py                         # Главный пайплайн (генерация данных)
+├── app.py                          # Дашборд Streamlit (веб-интерфейс)
+├── requirements.txt                # Зависимости Python
+│
 ├── configs/
-│   └── ahp_constants.json          # Весовые коэффициенты (AHP) для всех сценариев
+│   ├── ahp_constants.json          # Весовые коэффициенты AHP для всех сценариев
+│   └── settings.template.py        # Шаблон локальной конфигурации (API, прокси и др.)
+│
 ├── data/
-│   ├── raw/                        # Исходные файлы (ОКН, ООПТ и др.)
-│   └── processed/                  # Сгенерированные геоданные, матрицы доступности
-├── src/
+│   ├── raw/                        # Исходные файлы (ОКН, ООПТ и др.) — не в git
+│   └── processed/                  # Сгенерированные геоданные, матрицы — не в git
+│
+├── docs/                           # Документация и справочные материалы
+│   ├── HOW_IT_WORKS.md             # Подробное описание методологии
+│   ├── ARCHITECTURE.md             # Архитектура системы
+│   ├── DETAILED_PLAN_v3.md         # Актуальный план развития
+│   └── ahp_weights_table.csv       # Справочная таблица весов AHP
+│
+├── scripts/                        # Вспомогательные утилиты
+│   ├── clean.py                    # Очистка data/processed/ перед чистым запуском
+│   └── diagnose_osm.py             # Диагностика доступности регионов в OSM
+│
+├── src/                            # Исходный код (бизнес-логика)
 │   ├── analysis/
-│   │   ├── ahp.py                  # Логика метода анализа иерархий (AHP)
-│   │   └── optimizer.py            # Алгоритм имитации отжига (Simulated Annealing)
+│   │   ├── ahp.py                  # Метод анализа иерархий (AHP + WLC)
+│   │   └── optimizer.py            # Имитация отжига (Simulated Annealing)
 │   ├── etl/
-│   │   ├── gis_loader.py           # Парсеры локальных геоданных (GeoJSON/SHP)
-│   │   └── osm_loader.py           # Адаптер к API OpenStreetMap (OSMnx)
+│   │   ├── gis_loader.py           # Загрузка ОКН, ООПТ из локальных файлов
+│   │   └── osm_loader.py           # Загрузка данных из OpenStreetMap (OSMnx)
 │   └── generation/
-│       ├── topological_generator.py# Нарезка полигонов по алгоритмам Вороного
-│       └── ucm_builder.py          # Агрегация атрибутов (Spatial Join)
-├── tests/                          # Модульные и интеграционные тесты (Pytest)
-├── main.py                         # Главный скрипт бэкенда (выполнение Pipeline)
-├── app.py                          # Frontend (Дашборд Streamlit)
-├── DETAILED_PLAN.md                # История разработки (Roadmap)
-└── requirements.txt                # Зависимости Python
+│       ├── topological_generator.py# Нарезка блоков по физическим барьерам (BlocksNet)
+│       └── ucm_builder.py          # Атрибутирование блоков (Spatial Join)
+│
+└── tests/                          # Тесты (Pytest)
+    ├── test_gis_loader.py
+    └── test_ucm_builder.py
 ```
 
 ---
