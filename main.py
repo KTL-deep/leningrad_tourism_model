@@ -90,10 +90,21 @@ def generate_ucm(region_names: list, output_path: str = "data/processed/ucm_bloc
     except:
         amenities_gdf = gpd.GeoDataFrame()
 
+    # Извлекаем единый полигон границ для ГИС-запросов
+    try:
+        boundary_poly = boundary_gdf.union_all()
+    except AttributeError:
+        boundary_poly = boundary_gdf.unary_union
+
     okn_gdf = gis.load_cultural_heritage()
     _safe_export(okn_gdf, "data/processed/gis/okn.geojson")
-    oopt_gdf = gis.load_protected_areas()
+    
+    oopt_gdf = gis.load_protected_areas(boundary_poly=boundary_poly)
     _safe_export(oopt_gdf, "data/processed/gis/oopt.geojson")
+
+    # Вызываем загрузку/нарезку DEM
+    dem_path = gis.load_dem(boundary_poly=boundary_poly)
+
 
     # 2. Топологическая генерация блоков (Этап 2)
     generator = TopologicalGenerator(boundary_gdf=boundary_gdf)
