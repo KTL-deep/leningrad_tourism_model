@@ -85,6 +85,34 @@ def load_roads():
     except Exception:
         return None
 
+@st.cache_data
+def load_okn():
+    file_path = "data/processed/gis/okn.geojson"
+    try:
+        import os
+        if not os.path.exists(file_path):
+            return None
+        okn = gpd.read_file(file_path)
+        if okn.crs and okn.crs.to_epsg() != 4326:
+            okn = okn.to_crs(epsg=4326)
+        return okn
+    except Exception:
+        return None
+
+@st.cache_data
+def load_oopt():
+    file_path = "data/processed/gis/oopt.geojson"
+    try:
+        import os
+        if not os.path.exists(file_path):
+            return None
+        oopt = gpd.read_file(file_path)
+        if oopt.crs and oopt.crs.to_epsg() != 4326:
+            oopt = oopt.to_crs(epsg=4326)
+        return oopt
+    except Exception:
+        return None
+
 def main():
     st.title("🗺️ Parametric Model of Tourism Framework (TOK T)")
     st.markdown("Интерактивная DSS-система предиктивного мастер-планирования региона")
@@ -93,8 +121,8 @@ def main():
     if gdf is None or gdf.empty:
         st.warning("Ожидание данных... Убедитесь, что 'data/processed/ucm_blocks_optimized.geojson' существует.")
         return
-        
-    # --- РАСЧЕТ И АНАЛИЗ СЦЕНАРИЕВ (DSS) ---
+
+    # СЦЕНАРИИ
     scenarios = ["Экоцентризм", "Историко-центризм", "Инфраструктурный"]
     sc_stats = {}
     best_scenario = None
@@ -215,6 +243,8 @@ def main():
 
     st.sidebar.markdown("### Визуализация")
     show_roads = st.sidebar.toggle("🛣️ Транспортный граф (доступность)", value=False, help="Отобразить дорожную сеть, использованную для расчета матрицы доступности")
+    show_okn = st.sidebar.toggle("🏛️ Объекты культурного наследия (ОКН)", value=False, help="Отобразить точечные объекты культуры и истории")
+    show_oopt = st.sidebar.toggle("🌲 Природные зоны (ООПТ)", value=False, help="Отобразить границы особо охраняемых природных территорий")
     
     color_mode = st.sidebar.selectbox(
         "Режим раскраски блоков:",
@@ -449,29 +479,81 @@ def main():
     ).add_to(m)
 
     # 2. Отображение дорожной сети (добавляется сверху, поверх блоков)
-    if show_roads and 'roads_gdf' in locals() or show_roads:
+    if show_roads:
         roads_gdf = load_roads()
         if roads_gdf is not None and not roads_gdf.empty:
             if 'time_min' in roads_gdf.columns:
                 # Градиент от Розового через Фиолетовый к глубокому Индиго
                 colormap = cm.LinearColormap(
-                    colors=['#f472b6', '#a855f7', '#4c1d95'], 
-                    vmin=roads_gdf['time_min'].min(), 
+                    colors=['#f472b6', '#a855f7', '#4c1d95'],
+                    vmin=roads_gdf['time_min'].min(),
                     vmax=roads_gdf['time_min'].max()
                 )
-                
+
                 def road_style(feature):
                     val = feature['properties'].get('time_min', 0)
                     return {'color': colormap(val), 'weight': 2.5, 'opacity': 0.95}
             else:
                 def road_style(feature):
                     return {'color': '#a855f7', 'weight': 2.0, 'opacity': 0.8}
-            
+
             folium.GeoJson(
                 roads_gdf,
                 style_function=road_style,
                 name="Транспортный граф",
-                interactive=False # События мыши проходят сквозь дороги на лежащие под ними блоки
+                interactive=False  # События мыши проходят сквозь дороги на лежащие под ними блоки
+            ).add_to(m)
+
+    # 3. Отображение ОКН
+    if show_okn:
+        okn_gdf = load_okn()
+        if okn_gdf is not None and not okn_gdf.empty:
+            # Создаем отдельную FeatureGroup для слоя ОКН
+            okn_layer = folium.FeatureGroup(name="Объекты культурного наследия")
+            
+            # Для точечных объектов лучше использовать CircleMarker для лучшей производительности
+            if okn_gdf.geom_type.eq('Point').all():
+                for idx, row in okn_gdf.iterrows():
+                    folium.CircleMarker(
+                        location=[row.geometry.y, row.geometry.x],
+                        radius=4,
+                        color="#ffffff",
+                        weight=1,
+                        fill=True,
+                        fill_color="#ef4444",
+                        fill_opacity=0.9,
+                        tooltip="ОКН"
+                    ).add_to(okn_layer)
+            else:
+                folium.GeoJson(
+                    okn_gdf,
+                    name="Объекты культурного наследия",
+                    style_function=lambda x: {
+                        'fillColor': '#ef4444',
+                        'color': '#ffffff',
+                        'weight': 1.5,
+                        'fillOpacity': 0.7
+                    },
+                    tooltip=folium.GeoJsonTooltip(fields=[], aliases=[], labels=False, sticky=False) if okn_gdf.columns.size > 1 else None
+                ).add_to(okn_layer)
+            
+            okn_layer.add_to(m)
+            
+    # 4. Отображение ООПТ
+    if show_oopt:
+        oopt_gdf = load_oopt()
+        if oopt_gdf is not None and not oopt_gdf.empty:
+            folium.GeoJson(
+                oopt_gdf,
+                name="Особо охраняемые природные территории",
+                style_function=lambda x: {
+                    'fillColor': '#10b981',  # Изумрудный
+                    'color': '#047857',      # Темно-зеленая граница
+                    'weight': 2,
+                    'fillOpacity': 0.3,
+                    'dashArray': '5, 5'      # Пунктирная линия для зон
+                },
+                tooltip="ООПТ"
             ).add_to(m)
 
     st_folium(m, width="100%", height=750, returned_objects=[])
