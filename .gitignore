@@ -49,6 +49,7 @@ htmlcov/
 
 # --- Custom / Debug ---
 cache/
+.iduedu_cache/
 *.txt
 !requirements.txt
 
