@@ -1,0 +1,3 @@
+# Optional profiling/benchmark tools; keep out of the minimal production path.
+-r requirements.txt
+psutil==7.2.2

@@ -1,0 +1,26 @@
+# E00 offline audit only; Python 3.11.9, Windows x64.
+# Not the full application environment. Install: python -m pip install -r requirements-audit.lock
+certifi==2026.10.18
+charset-normalizer==3.5.2
+colorama==0.4.6
+geopandas==1.2.0
+idna==3.20
+iniconfig==2.3.1
+numpy==2.4.6
+osmium==4.3.2
+packaging==26.3
+pandas==2.3.3
+pluggy==1.7.0
+Pygments==2.21.0
+pyogrio==0.13.0
+pyproj==3.7.2
+pypdf==6.21.1
+pytest==9.1.1
+python-dateutil==2.9.0.post0
+pytz==2026.5
+requests==2.34.2
+shapely==2.2.0
+six==1.17.0
+tqdm==4.70.1
+tzdata==2026.5
+urllib3==2.8.0

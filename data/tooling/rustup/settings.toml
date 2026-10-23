@@ -1,0 +1,5 @@
+version = "12"
+default_host_tuple = "x86_64-pc-windows-gnu"
+profile = "minimal"
+
+[overrides]

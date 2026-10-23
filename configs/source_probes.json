@@ -1,0 +1,100 @@
+{
+  "schema_version": 1,
+  "defaults": {
+    "access_method": "GET",
+    "authentication": "unknown; probe sends no credentials",
+    "license": "unknown",
+    "update_frequency": "unknown",
+    "rate_limit": "unknown upstream; local probe at most one request per host per second",
+    "fields": "unknown; index availability is not schema validation",
+    "units": "unknown",
+    "adapter_version": null
+  },
+  "sources": [
+    {
+      "source_id": "egrkn",
+      "owner": "Ministry of Culture of Russia",
+      "url": "https://opendata.mkrf.ru/opendata/7705851331-egrkn/",
+      "coverage": "Cultural heritage registry open-data passport; not a downloaded registry",
+      "categories": ["heritage"],
+      "known_conditions": "Passport lists standard Russian open-data terms; API v2 specification requires a key; keyless downloads not yet verified",
+      "known_gaps": "Passport reachability does not verify registry records or regional completeness"
+    },
+    {
+      "source_id": "oopt",
+      "owner": "Leningrad Oblast Committee for Natural Resources",
+      "url": "https://kpr.lenobl.ru/ru/deiatelnost/organizaciya-i-funkcionirovanie-osobo-ohranyaemyh-prirodnyh-territorij/perechen-osobo-ohranyaemyh-prirodnyh-territorij-oopt-regionalnogo-i-20/",
+      "coverage": "Regional protected-area list page",
+      "categories": ["protected_areas"],
+      "known_conditions": "License, authentication and update frequency unknown",
+      "known_gaps": "Page probe does not verify geometries or completeness"
+    },
+    {
+      "source_id": "population",
+      "owner": "Petrostat (Rosstat territorial office)",
+      "url": "https://78.rosstat.gov.ru/",
+      "coverage": "Territorial statistical office homepage",
+      "categories": ["population"],
+      "known_conditions": "License, authentication and update frequency unknown",
+      "known_gaps": "Homepage is not a population dataset or a confirmed municipal breakdown"
+    },
+    {
+      "source_id": "accommodation",
+      "owner": "Federal Service for Accreditation (Russia)",
+      "url": "https://tourism.fsa.gov.ru/ru/main",
+      "coverage": "Tourism registry portal landing page",
+      "categories": ["accommodation"],
+      "known_conditions": "License, authentication and update frequency unknown",
+      "known_gaps": "Landing page does not verify accessible accommodation records"
+    },
+    {
+      "source_id": "transport",
+      "owner": "Leningrad Oblast Transport Committee",
+      "url": "https://transport.lenobl.ru/ru/programm/news/80960/",
+      "coverage": "Transport committee publication",
+      "categories": ["transport"],
+      "known_conditions": "License, authentication and update frequency unknown",
+      "known_gaps": "Publication is not a validated route network or timetable"
+    },
+    {
+      "source_id": "costs",
+      "owner": "Unified Information System for Public Procurement (Russia)",
+      "url": "https://zakupki.gov.ru/epz/main/public/home.html",
+      "coverage": "Public procurement portal homepage",
+      "categories": ["costs"],
+      "known_conditions": "License, authentication and update frequency unknown",
+      "known_gaps": "Homepage is not a cost estimate or filtered procurement dataset"
+    },
+    {
+      "source_id": "strategy",
+      "owner": "Official Internet Portal of Legal Information (Russia)",
+      "url": "https://publication.pravo.gov.ru/document/4700202506240002",
+      "coverage": "Specific legal publication document page",
+      "categories": ["future", "strategy"],
+      "known_conditions": "License, authentication and update frequency unknown",
+      "known_gaps": "Document reachability does not validate projected implementation"
+    },
+    {
+      "source_id": "pavlovsk",
+      "owner": "Pavlovsk State Museum-Reserve",
+      "url": "https://pavlovskmuseum.ru/about/pricing/466/",
+      "coverage": "Museum pricing/report page index",
+      "categories": ["visitor_reports"],
+      "known_conditions": "License, authentication and update frequency unknown",
+      "known_gaps": "Index returned a JavaScript access challenge on 2026-10-19; do not execute or bypass it"
+    },
+    {
+      "source_id": "gatchina_report_2025",
+      "owner": "Gatchina State Museum-Reserve",
+      "url": "https://gatchinapalace.ru/upload/medialibrary/936/otvk9ta8motx44bue1km8esd54k5cht1.pdf",
+      "coverage": "Museum 2025 report; not all visitors of the city",
+      "categories": ["visitor_reports"],
+      "known_conditions": "Public PDF fetch verified; redistribution conditions not established",
+      "known_gaps": "Reported total and local subscription visits have unknown overlap; no unique tourists or hourly demand",
+      "authentication": "not required for the verified PDF GET",
+      "fields": ["reported_total", "park_local_resident_subscription_visits"],
+      "units": ["человек as reported", "раза as reported"],
+      "adapter_version": "gatchina-2025-v1"
+    }
+  ]
+}

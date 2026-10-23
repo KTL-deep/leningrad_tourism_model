@@ -1,9 +1,9 @@
 import geopandas as gpd
 import pandas as pd
 import osmnx as ox
-import warnings
-from shapely.geometry import Polygon, MultiPolygon, LineString, MultiLineString
-from blocksnet import BlocksGenerator
+import math
+
+from src.generation.blocksnet_cutting import cut_urban_blocks
 
 class TopologicalGenerator:
     """
@@ -14,7 +14,17 @@ class TopologicalGenerator:
         """
         :param boundary_gdf: GeoDataFrame с границами исследуемой территории (EPSG:4326)
         """
-        self.boundary_gdf = boundary_gdf
+        if not isinstance(boundary_gdf, gpd.GeoDataFrame):
+            raise TypeError("boundary_gdf must be a GeoDataFrame")
+        if boundary_gdf.empty:
+            raise ValueError("boundary_gdf must be nonempty")
+        if (boundary_gdf.geometry.isna().any() or boundary_gdf.geometry.is_empty.any()
+                or not boundary_gdf.geometry.is_valid.all()
+                or not boundary_gdf.geometry.geom_type.isin(["Polygon", "MultiPolygon"]).all()):
+            raise ValueError("boundary_gdf must contain valid nonempty polygon geometries")
+        self.boundary_gdf = boundary_gdf.copy()
+        if self.boundary_gdf.crs is None:
+            raise ValueError("boundary_gdf must have a CRS")
         if self.boundary_gdf.crs and self.boundary_gdf.crs.to_epsg() != 4326:
             self.boundary_gdf = self.boundary_gdf.to_crs(epsg=4326)
             
@@ -136,12 +146,14 @@ class TopologicalGenerator:
 
     def generate_blocks(self, min_area_m2: float = 500.0) -> gpd.GeoDataFrame:
         """
-        Запускает алгоритм диаграмм Вороного (BlocksNet) для нарезки территории.
+        Нарезает территорию физическими барьерами с помощью BlocksNet.
         
         :param min_area_m2: Минимальная площадь блока в квадратных метрах.
                             Мелкие осколки (артефакты нарезки) будут отфильтрованы.
         :return: GeoDataFrame с готовыми топологическими блоками (EPSG:4326).
         """
+        if not math.isfinite(min_area_m2) or min_area_m2 < 0:
+            raise ValueError("min_area_m2 must be finite and nonnegative")
         print("=== Старт генерации топологических блоков (BlocksNet) ===")
         roads_gdf, rail_gdf, water_gdf = self._fetch_physical_barriers()
         
@@ -152,40 +164,17 @@ class TopologicalGenerator:
         rail_proj = rail_gdf.to_crs(local_crs) if rail_gdf is not None else None
         water_proj = water_gdf.to_crs(local_crs) if water_gdf is not None else None
 
-        print("Инициализация BlocksGenerator...")
-        # BlocksGenerator сам проецирует данные в локальную метрическую систему при расчетах
-        generator = BlocksGenerator(
-            boundaries=boundaries_proj,
-            roads=roads_proj,
-            railways=rail_proj,
-            water=water_proj
-        )
-        
-        # Фикс бага интеграции pandera и geopandas в библиотеке blocksnet (GeoSeries.__or__ issue)
-        import blocksnet.preprocessing.blocks_generator as bg
-        original_schema = bg.BlocksSchema
-        bg.BlocksSchema = lambda x: x
-        
-        try:
-            with warnings.catch_warnings():
-                warnings.simplefilter("ignore")
-                # Запуск нарезки (BlocksGenerator возвращает GeoDataFrame в метрической системе)
-                blocks_gdf = generator.run()
-        finally:
-            bg.BlocksSchema = original_schema
+        blocks_gdf = cut_urban_blocks(boundaries_proj, roads_proj, rail_proj, water_proj)
         
         if blocks_gdf is None or blocks_gdf.empty:
             raise ValueError("BlocksNet не смог сгенерировать ни одного блока.")
             
         # Фильтрация микро-полигонов (мусора)
         print(f"Фильтрация блоков площадью менее {min_area_m2} кв. м...")
-        # Убедимся, что мы в метрической CRS перед расчетом площади
-        if blocks_gdf.crs is None or not blocks_gdf.crs.is_projected:
-            # BlocksGenerator обычно возвращает в спроецированной CRS, но для надежности
-            blocks_gdf = blocks_gdf.to_crs(self.boundary_gdf.estimate_utm_crs())
-            
         initial_count = len(blocks_gdf)
         blocks_gdf = blocks_gdf[blocks_gdf.geometry.area >= min_area_m2].copy()
+        if blocks_gdf.empty:
+            raise ValueError("No blocks remain after min_area_m2 filtering")
         
         filtered_count = len(blocks_gdf)
         print(f"Отфильтровано {initial_count - filtered_count} осколков. Осталось: {filtered_count} блоков.")

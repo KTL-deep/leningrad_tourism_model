@@ -1,8 +1,11 @@
-blocksnet  # устанавливать с --no-deps во избежание конфликта numpy (pip install blocksnet --no-deps)
+# PyPI 0.1.0 requires GeoPandas <1 / NumPy 1; upstream supports the modern stack.
+# Pin the reviewed upstream revision, not a moving branch; install WITH dependencies.
+blocksnet @ git+https://github.com/aimclub/blocksnet.git@f576517e99c53e74beda29908548f58bfa758e4c
 geopandas>=1.1.0
 pandas>=2.3.0,<3.0.0
 numpy>=1.26.0
 requests>=2.32.5
+pypdf>=6.21.1,<7  # imported by the optional official-report adapter
 beautifulsoup4>=4.14.3
 shapely>=2.0.2
 pytest>=9.0.2
@@ -12,8 +15,9 @@ streamlit-folium>=0.27.1
 branca>=0.8.2
 matplotlib>=3.8.0
 osmnx>=2.1.0
+osmium>=4.3.2,<5  # резервный потоковый разбор открытых OSM PBF
 networkx>=3.3
-iduedu>=1.2.2
+iduedu==0.4.1  # required by the pinned BlocksNet revision
 pyarrow>=12.0.0
 tqdm>=4.67.3
 loguru>=0.7.0

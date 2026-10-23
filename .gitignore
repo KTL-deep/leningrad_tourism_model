@@ -4,6 +4,9 @@
 data/*
 !data/**/
 !data/**/.gitkeep
+# Local source-audit observations are not versioned research data.
+/data/audit/
+/data/analysis/
 
 # Если вы храните API ключи в settings.py, лучше исключить его и оставить settings.template.py
 configs/settings.py
@@ -29,6 +32,7 @@ __pycache__/
 venv/
 env/
 .venv/
+.venv-app/
 .env
 
 # --- OS System Files ---
@@ -52,7 +56,22 @@ cache/
 .iduedu_cache/
 *.txt
 !requirements.txt
+!requirements-benchmark.txt
+/benchmarks/osm_rust/target/
 
 # --- Локальная документация и планы (не для репозитория) ---
-docs/
+docs/*
+!docs/implementation_status.md
+!docs/requirements_traceability.md
+!docs/validation.md
+!docs/performance_osm.md
+!docs/performance_osm_results.csv
+!docs/data_sources.md
+!docs/pilot_scope.md
+!docs/methods_matrix.md
+!docs/legal_rules.md
+!docs/evidence_register.csv
+!docs/references.bib
+!docs/README.md
+!docs/decisions/
 powershell.cmd

@@ -1,0 +1,12 @@
+{
+  "rust_process_wall_s": 37.34400000000096,
+  "candidate_validation_wall_s": 0.35900000000037835,
+  "header_and_small_pbf_write_wall_s": 0.5779999999977008,
+  "final_python_parse_wall_s": 2.7809999999990396,
+  "candidate_bytes": 2917049,
+  "reduced_pbf_bytes": 399886,
+  "supporting_nodes": 32672,
+  "candidate_ways": 7255,
+  "rust_stderr": "{\"candidate_bytes\":2917049,\"candidates\":10041,\"nodes\":89029204,\"relations_unsupported\":true,\"stage\":\"complete\",\"ways\":7311518}\n",
+  "scope": "diagnostic phases; total benchmark includes all phases and setup/cleanup"
+}

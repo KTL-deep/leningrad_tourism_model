@@ -1,7 +1,0 @@
-# Project-level defaults. Uses existing ChatGPT sign-in; no API key.
-# Main agent model is deliberately inherited from Codex CLI/user config.
-[agents]
-enabled = true
-max_concurrent_threads_per_session = 2
-default_subagent_model = "gpt-6-luna"
-default_subagent_reasoning_effort = "low"

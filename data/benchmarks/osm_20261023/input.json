@@ -1,0 +1,12 @@
+{
+  "pbf": "D:\\PYTHON_PROJECTS\\leningrad_tourism_model-1\\data\\analysis\\cache\\geofabrik_extract\\northwestern-fed-district.osm.pbf.0af0ab0cbde91bee67677b73f553ec6f46673733b61f94dd631202624d494da4",
+  "source_manifest": {
+    "sha256": "0af0ab0cbde91bee67677b73f553ec6f46673733b61f94dd631202624d494da4",
+    "size": 655544853,
+    "url": "https://download.geofabrik.de/russia/northwestern-fed-district-latest.osm.pbf",
+    "resolved_url": "https://download.geofabrik.de/russia/northwestern-fed-district-261021.osm.pbf",
+    "received_at": "2026-10-23T12:23:27.247002+00:00",
+    "ttl_seconds": 86400
+  },
+  "boundary_snapshot_id": "3767b76795dc9cd4606918684076217bcf3a701efc744c1db4708833c682f036"
+}
