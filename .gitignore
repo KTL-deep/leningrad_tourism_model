@@ -59,6 +59,11 @@ cache/
 !requirements-benchmark.txt
 /benchmarks/osm_rust/target/
 
+# Project-local agent skills downloaded by the Skills CLI (not application code).
+/.agents/skills/
+/.opencode/skills/
+/skills-lock.json
+
 # --- Локальная документация и планы (не для репозитория) ---
 docs/*
 !docs/implementation_status.md
@@ -66,6 +71,9 @@ docs/*
 !docs/validation.md
 !docs/performance_osm.md
 !docs/performance_osm_results.csv
+!docs/poi_quality.md
+!docs/e03_acceptance.md
+!docs/e04_registry_enrichment.md
 !docs/data_sources.md
 !docs/pilot_scope.md
 !docs/methods_matrix.md

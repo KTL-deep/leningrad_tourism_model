@@ -1,5 +1,11 @@
 # Проверки и ограничения исходной точки
 
+## E04 — 2026-10-26
+
+Полный набор в `.venv-app`, с `OSM_RUST_PRESELECT` на `benchmarks/osm_rust/target/release/osm_rust_preselect.exe`: **672 passed, 3 xfailed**, 35 предупреждений Shapely. `pip check`: зависимостных конфликтов нет. Новые тесты адаптеров/сопоставления/интеграции не используют сеть: `tests/test_mkrf_registry.py`, `test_mkrf_json_stream.py`, `test_lenobl_oopt.py`, `test_heritage_matching.py`, `test_registry_enrichment.py`.
+
+Отдельная живая проверка: ООПТ 55 записей; JSONL ZIP ЕГРОКН отклонён из-за некорректного размера member, а другой объявленный формат JSON ZIP прошёл все проверки. Все 17 массивов прочитаны потоково: 163 700 записей, сохранены 9 838 регионов 47/78. CLI создаёт partial child-run с advisory matching: Павловск 1 ID-связь/128 кандидатов, Гатчина 1 ID-связь/24 кандидата. Для каждой территории два offline-повтора дали идентичные matching-снимки; все ссылки/хэши проверены, родитель и пользовательский `okn.geojson` неизменны. SHA исходного архива одинаков на обеих территориях. Это **не** подтверждает точность/полноту сопоставления на независимой выборке. См. [диагностику E04](e04_registry_enrichment.md).
+
 ## E00 — 2026-10-19
 
 Исходный коммит: `fa6e4e1f62145d263749dbdf2e40710a9f78693d`. Windows x64, Python 3.11.9. Создано изолированное `.venv`; системные пакеты не изменены. Точные версии минимального окружения: `requirements-audit.lock`. Это **не** окружение полного приложения.
@@ -226,3 +232,51 @@ git diff --check
 Финальный общий pytest `.venv-app` с `OSM_RUST_PRESELECT` на настоящий release binary: **481 passed, 3 xfailed**, 20,29 с, без skips. Rust `cargo test --release --locked`: **2 passed**. pip check и diff --check — OK. Текущие измеренные Rust binary/bridge/common source сверены с SHA отчёта; исходники baseline/native архивированы по SHA локально. Полные исходные отчёты/pstats — `data/benchmarks/osm_20261023/`, компактная versionable сводка с их хэшами — `performance_osm_results.csv`.
 
 Ограничения: одна машина/территория, 1–2 повторения, фиксированный порядок, неизвестный cache ОС; RSS — выборочная сумма дерева процессов, не точный пик; CPU дерева — сумма последних наблюдений. Первоначальное OS peak-поле относилось к venv launcher, не worker, и не используется как память парсера. Rust поддерживает более узкий sorted/complete 1e-7 node/way PBF, индекс до 2 GiB, relations не включены. Production backend не переключён и общие PBF-манифесты не реализованы этим экспериментом. Подробности/следующий план — `performance_osm.md`.
+
+## Tagged multipolygon POI v2 — 23–24.10.2026
+
+`extract_layers_with_relations` использует libosmium assembly; ограниченный prepass выбирает только явно POI-тегированные `type=multipolygon`. Геометрия проходит проверку всех частей/отверстий и топологического равенства исходного outer/inner linework собранным кольцам. Источник, где libosmium молча меняет роль кольца, не принимается как корректный relation POI. Центр приблизителен; доступность и мощность unknown. Другие типы relations и legacy без собственных POI-тегов не поддержаны, дедупликация не выполнена. Общая completeness остаётся partial.
+
+CLI использует `geofabrik-node-way-multipolygon-observations-v2`; `--node-way-only` сохраняет v1 и старые снимки. Обычный низкоуровневый `extract_layers` и Rust benchmark по умолчанию остаются node/way-only. Native tag filter в relation-режиме отвергается явно: раннее удаление supporting ways не допускается.
+
+В `.venv-app` с настоящим `OSM_RUST_PRESELECT` полный pytest: **493 passed, 3 xfailed**, 40,12 с, без skips. `pip check` OK. Включены фикстуры split outer, hole, MultiPolygon с малой второй частью, окружающий территорию полигон без внутренних вершин, sparse IDs, missing members/refs, некорректное удалённое inner-кольцо, ресурсные лимиты/cleanup, реальный CLI PBF → v2 snapshot/provenance/run и повтор/v1 без перезаписи. Последняя независимая проверка reviewer конкретных блокеров не выявила.
+
+### Реальный архивный replay (не свежий сбор)
+
+На 24.10 кэш уже старше TTL. Сеть не использовалась, TTL не менялся. Из исходного run `ae7035e38e6f445daf80bddfff6f5818` загружен StudyArea, через SnapshotStore проверены ссылки/байты и архивный исходник `0696033428c22363480f1e973cbbf33ea7ffd3258716b98b702a476870cb5d31` (655544853 байта, SHA-256 `0af0ab0cbde91bee67677b73f553ec6f46673733b61f94dd631202624d494da4`, received_at 23.10 12:23:27 UTC, база 21.10 20:21:46 UTC). Новый парсер применён напрямую к архивному blob, без подмены адаптеров/проверок свежести.
+
+Результат: **1005 POI, в том числе 48 relations; 5568 дорог; missing_way_locations=0**. Прежние 957 node/way POI и все дороги полностью совпали с архивными экспортами v1. Проверены уникальные IDs, валидность всех выходных геометрий, хэши, соответствие node refs/координат и неизвестное время движения. Во всём PBF: 3933 кандидата, 6 несобранных, 14 некорректных, 96 POI-relations других типов. Scope этих счётчиков — source_extract: без геометрии ошибки нельзя приписать городу.
+
+Пять контрольных source relations сверены по ID/тегам с повторным relation-only чтением исходника: 1651410 (Адмиралтейство), 1655532 (Дворцовый парк), 1655534 (Сильвия), 1655536 (Зверинец), 1655538 (Дубки). Это внутренняя проверка происхождения, **не независимое обследование или измеренная полнота/точность**. Число наблюдений не равно числу уникальных заведений.
+
+Отчёт и `.features` — `data/audit/pbf_relations_20261024T130930Z/`, рядом точный `parser_source.py`. SHA-256 отчёта `0920c6a89be7667da8c00344723d9fed5145ce577448d96b76625b49d2546f8b`; SHA-256 парсера `065e0af7c5e1374bd1ff6116ba9296049ba9449fa2cb9f9700fbf111419a6473`. Wall 645,05 с — один функциональный replay; не сравнивать его с прежними Rust timings как новый benchmark.
+
+Крупный источник не прогонялся заново через acquisition CLI v2 и не публиковался как свежий RunManifest: связка CLI/снимков проверена реальным синтетическим PBF, реальный архивный источник — прямым разбором. Свежий v2-сбор, дедупликация, независимая полнота, вторая территория и транспортное окружение остаются следующими проверками. E03 не закрыт.
+
+## Advisory duplicate candidates — 24.10.2026
+
+Добавлены `src/etl/poi_duplicates.py`, `src/pipeline/poi_quality.py`, их тесты и интеграция в `scripts.collect_osm_extract`. Отчёт — производный supporting-артефакт, связанный с POI snapshot, исходными байтами/хэшем/датой и манифестом. Наблюдения не сливаются, новые расчётные возможности не включаются. Правила/ограничения и неоднозначные примеры — [poi_quality](poi_quality.md), решение — [ADR 0012](decisions/0012-advisory-poi-duplicate-candidates.md).
+
+Полный pytest `.venv-app` с настоящим `OSM_RUST_PRESELECT`: **519 passed, 3 xfailed**, 20,52 с, без skips; pip check/diff --check OK. Покрыты NFKC/casefold/имена и семантические теги, entity/brand QID и конфликты, неоднозначные цепочки без транзитивного слияния, геодезический порог/полюса/date line/сопоставление grid с полным Geod-oracle, валидация IDs/геометрии/categories/tags, лимиты и повторные сравнения, отсутствие мутации/детерминизм. Pipeline проверяет raw hash/area/содержимое, отклоняет oversized до чтения, сохраняет идемпотентный partial-отчёт; CLI с реальным синтетическим PBF связывает его с run, не меняя POI counts или исходные экспорты. Независимый reviewer конкретных дефектов не выявил.
+
+### Архивная проверка 1005 наблюдений
+
+Входные `.features` и исходный report multipolygon проверены по прежним хэшам; PBF повторно не разбирался, HTTP/TTL не использовались. Создан отдельный исторический POI-снимок `769f32c8174c0355e4fdd0e1a48d187ad16d8e0fb397317998778eb44c99361f` с явным archival-replay provenance; исходный PBF snapshot прежний `0696033428c22363480f1e973cbbf33ea7ffd3258716b98b702a476870cb5d31`.
+
+Отчёт `32a2cd00b93f41463f80a55d949423bd833b756f90a545ea6a57cdbc82047e64` содержит **52 пары кандидатов, auto_merged_count=0**: 50 node–node, 1 node–way, 1 node–relation. Общий QID только у одной пары, конфликтов QID в этом наборе нет. Проверены четыре ссылки исторического quality-run `6c9f8c6e3f404dcb962104598ac66fd1` (partial), содержимое отчёта и полное совпадение исходных/сохранённых features после аудита. Это не свежий acquisition-run и не измеренная точность классификации дублей.
+
+Артефакт `data/audit/poi_duplicate_candidates_20261024T135910Z/report.json`, SHA-256 `6c2b7b747620a9ca76643546e9522d03fb86a351af1510d1158322d47527a0db`; detector SHA-256 `ef4e7636f90e8e449516481edb33fae59a1bcffd0c51646d46e0592c425f42c5`. Рядом сохранены точные `detector_source.py` и `quality_pipeline_source.py`. Порог/сигналы ещё не калиброваны независимой разметкой, общие имена и остановки могут быть разными объектами. Число уникальных заведений и снижение дублей не заявляются; E03 partial.
+
+## E03 — финальная приёмка первичного сбора 24.10.2026
+
+Матрица, команды, реальные IDs и смысл done/partial — [e03_acceptance.md](e03_acceptance.md). Добавлены collect_territory, collection_scope, http_session, official_statistics, их тесты и callback/scope integration существующего extract CLI.
+
+Финальный `.venv-app` pytest с настоящим `OSM_RUST_PRESELECT`: **580 passed, 3 xfailed**, 35 Shapely deprecation warnings, 25,04 с; skips нет. Pip check/diff --check OK (LF → CRLF warnings). Проверены setup/status retries/backoff/rate state/403/429/TLS/offline, atomic cache/TTL, отказ журнала с закрытием response, scope/метры/multipart/area/provenance, неподтверждённый catalog/schema, optional errors/metadata без остановки пространственной базы. Прежние xfail не исправлялись; это не готовность baseline/UI.
+
+Реально выполнены clean online в новом каталоге данных, offline-повтор и второй город: **Гатчина 1343 POI/9220 дорог**, повтор с теми же снимками/экспортами; **Павловск 3256/21025** с автоматически использованным PBF-кэшем. По 10 snapshot-ссылок трёх run проверены через get_run и независимые hash/bytes/geometry/unique IDs/refs/unknown times проверки. Halo покрывает request; вне административной геометрии есть 265/1123 точных node POI. Его достаточность для расчётной доступности не заявлена.
+
+Петростат реально запрошен и исключён с tls_error, в offline — cache_missing; статистики нет, это не нулевые значения. Схема, известная только из фикстуры, принудительно excluded: unverified_live_schema, не объявлена живым провайдером. Условное включение валидированного optional-контракта и отказ ложного допуска проверены отдельно в тестах.
+
+Отрицательный реальный запуск на новом пустом offline-store: cache_miss/exit2, failed-журнал, отсутствие counts/run/HTTP. Ручных входных файлов, отключения TLS/проверок или выдачи replay за свежий сбор нет. PBF получен 24.10 14:27:08 UTC, SHA `c7c6ab812db342399fd39541beb73cd3a239a1aeb5643ba839f34b18b51740ef`. Отчёт `data/audit/e03_acceptance_20261024.json`, SHA `b72360d21a109db432a1545813a87c913399ee5ccb91e2ab7bfa6c9f4c18b630`.
+
+Reviewer после исправлений не указал E03-блокеров. E03 done как программный этап первичного сбора; run/data partial, model readiness failed и отсутствие рекомендаций сохранены. E04 разметка/слияние/полнота, E07 транспорт/расчётное окружение и E15 recovery/ускорение не закрыты.

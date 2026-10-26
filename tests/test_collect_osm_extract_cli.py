@@ -27,7 +27,13 @@ def test_cli_export_offline_and_modified_file(tmp_path, capsys):
         assert pbf.read_bytes() == (tmp_path / "extract.pbf").read_bytes()
         paths = {role: directory / (role + ".features") for role in ("poi", "network")}
         for path in paths.values():
-            path.write_text('{"type":"Feature","geometry":null,"properties":{}}\n')
+            path.write_text(json.dumps({
+                "type": "Feature", "id": "node/1",
+                "geometry": {"type": "Point", "coordinates": [30, 60]},
+                "properties": {"osm_type": "node", "osm_id": 1,
+                               "tags": {"tourism": "museum"}, "categories": ["tourism"],
+                               "location_precision": "exact_source"},
+            }) + "\n")
         return paths, {"poi": 1, "network": 1}, None
 
     def run():
@@ -42,6 +48,8 @@ def test_cli_export_offline_and_modified_file(tmp_path, capsys):
     assert json.loads(Path(path).read_text())["provenance"]["source_snapshot_id"] == output["source_snapshot_id"]
     assert json.loads(Path(path).read_text())["provenance"]["run_manifest_id"] is None
     manifest = store.get_run(output["run_manifest_id"])
+    assert output["poi_duplicate_audit"]["snapshot_id"] in manifest.snapshot_ids
+    assert output["poi_duplicate_audit"]["observations_modified"] is False
     assert manifest.status == "failed"  # Partial inventory does not enable a framework map.
     assert {boundary_snapshot.snapshot_id, output["source_snapshot_id"],
              *(item["snapshot_id"] for item in output["exports"].values())} <= set(manifest.snapshot_ids)
