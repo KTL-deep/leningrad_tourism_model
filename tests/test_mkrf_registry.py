@@ -51,8 +51,10 @@ def archive(rows=None, member="data-70-structure-16.jsons"):
         rows = [row(), row("78", (31.5, 59.5), "456", "n2"),
                 row("47", None, "789", "n3"), row("56", (55, 51), "999", "n4")]
     buf = io.BytesIO()
+    info = zipfile.ZipInfo(member, date_time=(2026, 1, 1, 0, 0, 0))
+    info.compress_type = zipfile.ZIP_DEFLATED
     with zipfile.ZipFile(buf, "w", compression=zipfile.ZIP_DEFLATED) as file:
-        file.writestr(member, b"".join(json.dumps(r, ensure_ascii=False).encode() + b"\n" for r in rows))
+        file.writestr(info, b"".join(json.dumps(r, ensure_ascii=False).encode() + b"\n" for r in rows))
     return buf.getvalue()
 
 
@@ -62,6 +64,21 @@ SCHEMA = {"type": "object", "properties": {"general": {"type": "object", "proper
     "address": {"type": "object", "properties": {"mapPosition": {
         "type": "object", "logicalType": "GeoJSON", "format": "lat,long",
         "properties": {"type": {"type": "string"}, "coordinates": {"type": "array"}}}}}}}}}
+
+
+def test_archive_deterministic_across_local_times(monkeypatch):
+    rows = [row()]
+    member = "data-70-structure-16.jsons"
+    monkeypatch.setattr(zipfile.time, "localtime", lambda *_: (2025, 1, 1, 0, 0, 0))
+    first = archive(rows, member)
+    monkeypatch.setattr(zipfile.time, "localtime", lambda *_: (2026, 12, 31, 23, 59, 58))
+    second = archive(rows, member)
+    assert first == second
+    with zipfile.ZipFile(io.BytesIO(first)) as file:
+        assert file.namelist() == [member]
+        assert file.getinfo(member).date_time == (2026, 1, 1, 0, 0, 0)
+        assert file.getinfo(member).compress_type == zipfile.ZIP_DEFLATED
+        assert file.read(member) == json.dumps(rows[0], ensure_ascii=False).encode() + b"\n"
 
 
 class Response:

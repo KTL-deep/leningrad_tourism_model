@@ -114,8 +114,18 @@ def load_oopt():
         return None
 
 def main():
-    st.title("🗺️ Parametric Model of Tourism Framework (TOK T)")
-    st.markdown("Интерактивная DSS-система предиктивного мастер-планирования региона")
+    st.title("🗺️ Туристический каркас — исследовательский baseline")
+    st.warning(
+        "Показана старая AHP/SA-модель, а не новая система v1.2. "
+        "Баллы и Capacity не подтверждают спрос, физическую вместимость, "
+        "природоохранные пределы или допустимость строительства. "
+        "Это не прогноз туристического потока и не рекомендации администрации."
+    )
+    st.caption(
+        "Сравнение исторических сценариев на подготовленных данных. "
+        "Новый сбор территории и обогащение E03/E04 работают отдельно через CLI; "
+        "этот экран не запускает их и не проверяет актуальность входов."
+    )
     
     gdf = load_data()
     if gdf is None or gdf.empty:
@@ -162,8 +172,13 @@ def main():
                 max_score = score
                 best_scenario = sc
 
-    # --- ИНТЕРФЕЙС РЕКОМЕНДАЦИИ СЦЕНАРИЯ ---
-    st.markdown("### Лучший сценарий развития территорий")
+    # --- СРАВНЕНИЕ СЦЕНАРИЕВ BASELINE, НЕ РЕКОМЕНДАЦИЯ ---
+    st.markdown("### Сравнение сценариев baseline")
+    st.caption(
+        "Ранжирование по старой формуле: средняя пригодность × сумма Capacity. "
+        "Обоснованность этой формулы не подтверждена; максимальный балл "
+        "не означает лучший план развития. Названия сценариев сохранены из baseline."
+    )
     
     col1, col2, col3 = st.columns(3)
     for i, sc_name in enumerate(scenarios):
@@ -171,7 +186,7 @@ def main():
             continue
         stats = sc_stats[sc_name]
         is_best = (sc_name == best_scenario)
-        badge = "🏆 РЕКОМЕНДУЕМЫЙ" if is_best else "⏳ Альтернативный"
+        badge = "Максимальный балл baseline" if is_best else "Другой сценарий baseline"
         bg_color = "rgba(16, 185, 129, 0.15)" if is_best else "rgba(107, 114, 128, 0.05)"
         border_color = "#10b981" if is_best else "#4b5563"
         text_color = "#34d399" if is_best else "#9ca3af"
@@ -184,7 +199,8 @@ def main():
                     <div style="font-size: 14px; color: {text_color}; line-height: 1.6; margin-top: 8px;">
                         <b>Интегральный балл:</b> {stats['score']:.2f}<br>
                         <b>Ср. пригодность S<sub>ik</sub>:</b> {stats['mean_suit']:.2f}<br>
-                        <b>Емкость размещения:</b> {stats['total_cap']:,} чел.
+                        <b>Условный Capacity baseline:</b> {stats['total_cap']:,}<br>
+                        <small>Не подтверждённая вместимость в людях</small>
                     </div>
                 </div>
             """, unsafe_allow_html=True)
@@ -210,8 +226,9 @@ def main():
             *   **Опорные центры (Хабы)** — главные узлы приема туристов, концентрирующие инфраструктуру размещения (отели, кемпинги), питания (рестораны) и транспортной доступности.
             *   **Локальные точки притяжения** — культурные достопримечательности, парки, ОКН, требующие кратковременного посещения.
             *   **Линейные элементы (Маршруты)** — велопешеходные и экологические связи, проходящие через природные ландшафты, а также экотропы.
-            *   **Целевое использование (Target Land Use)** — предписанный алгоритмом Simulated Annealing тип развития, обеспечивающий экологический баланс и синергию.
-            *   **Приоритет развития** — ранжирование блоков (Высокий / Средний / Низкий) по квантилям (процентилям) распределения баллов пригодности $S_{ik}$. Позволяет инвесторам определить приоритетность освоения участков.
+            *   **Целевое использование (Target Land Use)** — категория, назначенная старым алгоритмом Simulated Annealing. Экологический баланс, допустимость и эффект такого назначения не подтверждены.
+            *   **Приоритет развития** — историческое название ранга блоков (Высокий / Средний / Низкий) по квантилям баллов пригодности $S_{ik}$. Не является инвестиционной рекомендацией или разрешением освоения участка.
+            *   **Capacity** — условный показатель старой формулы, зависящий от пригодности. Не измеряет подтверждённую мощность услуги K или природоохранный предел C.
             """)
 
     st.markdown("---")
@@ -251,7 +268,7 @@ def main():
         [
             "Целевое использование (ТОКТ)", 
             "Приоритет развития (Теплокарта)", 
-            "Емкость размещения",
+            "Условный Capacity baseline",
             "Доля лесов (%)",
             "Расстояние до ТПУ (м)"
         ],
@@ -298,8 +315,8 @@ def main():
         st.sidebar.markdown('<div style="display:flex; align-items:center; margin-bottom:5px;"><div style="width:16px; height:16px; background-color:#f59e0b; border-radius:3px; margin-right:8px;"></div><span style="font-size:14px;">📈 Средний (35%)</span></div>', unsafe_allow_html=True)
         st.sidebar.markdown('<div style="display:flex; align-items:center; margin-bottom:5px;"><div style="width:16px; height:16px; background-color:#475569; border-radius:3px; margin-right:8px;"></div><span style="font-size:14px;">🐚 Низкий (40%)</span></div>', unsafe_allow_html=True)
         
-    elif color_mode == "Емкость размещения":
-        st.sidebar.markdown(f"Количество человек (от **{cap_min}** до **{cap_max}**):")
+    elif color_mode == "Условный Capacity baseline":
+        st.sidebar.markdown(f"Условный Capacity (от **{cap_min}** до **{cap_max}**), не число людей:")
         st.sidebar.markdown(f"""
             <div style="background: linear-gradient(to right, #1e293b, #6366f1, #a855f7, #ec4899, #f59e0b); height: 15px; border-radius: 5px; margin-bottom: 5px;"></div>
             <div style="display: flex; justify-content: space-between; font-size: 11px; color: #a1a1aa; margin-bottom: 15px;">
@@ -420,7 +437,7 @@ def main():
                 'weight': 0.6,
                 'fillOpacity': 0.70
             }
-    elif color_mode == "Емкость размещения":
+    elif color_mode == "Условный Capacity baseline":
         def style_func(feature):
             val = feature['properties'].get('Cap_Val', 0)
             color = cap_colormap(val)
@@ -453,7 +470,7 @@ def main():
 
     # 1. Отображение блоков (добавляется снизу)
     popup_fields = ['block_id', 'Target_LU', 'Priority', 'Cap_Val', 'S_Hubs', 'S_Points', 'S_Routes', 'dist_to_hubs']
-    popup_aliases = ['🆔 ID:', '🎯 Тип ТОКТ:', '⚡ Приоритет:', '👥 Емкость (чел):', '🟣 S(Хаб):', '🟠 S(Точка):', '🟢 S(Маршрут):', '🛤️ ТПУ (м):']
+    popup_aliases = ['🆔 ID:', '🎯 Тип ТОКТ (baseline):', '⚡ Ранг baseline:', 'Условный Capacity (не число людей):', '🟣 S(Хаб):', '🟠 S(Точка):', '🟢 S(Маршрут):', '🛤️ ТПУ (м):']
 
     folium.GeoJson(
         display_gdf,
