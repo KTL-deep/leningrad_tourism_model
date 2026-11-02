@@ -74,6 +74,7 @@ docs/*
 !docs/poi_quality.md
 !docs/e03_acceptance.md
 !docs/e04_registry_enrichment.md
+!docs/e04_heritage_validation.md
 !docs/data_sources.md
 !docs/pilot_scope.md
 !docs/methods_matrix.md

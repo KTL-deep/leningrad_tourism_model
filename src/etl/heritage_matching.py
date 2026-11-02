@@ -8,8 +8,9 @@ import unicodedata
 
 from pyproj import Geod
 
+from src.etl.heritage_locality import compare_locality_context, validate_locality_context
 
-HERITAGE_MATCHING_VERSION = "heritage-matching-v1"
+HERITAGE_MATCHING_VERSION = "heritage-matching-v4"
 MAX_RECORDS = 50000
 MAX_POI = 200000
 MAX_COMPARISONS = 250000
@@ -18,6 +19,8 @@ _REGISTRY = re.compile(r"[0-9]{15}\Z")
 _SPLIT = re.compile(r"[;,\s]+")
 _GEOD = Geod(ellps="WGS84")
 _REF_KEYS = ("ref:egrokn", "ref:ru:heritage")
+_OKN_KEY = "ref:okn"
+_OKN_WARNING = "ref_okn_namespace_length_documentation_conflict"
 _LIMITATIONS = [
     "A shared supplied registry number is identifier linkage, not proof of a physical facility or permission to visit.",
     "Name/distance candidates are for review only; no records or POIs are merged.",
@@ -74,8 +77,11 @@ def _official(record):
     point = _point(record["geometry"])
     if "source_url" in record and not isinstance(record["source_url"], str):
         raise ValueError("invalid_source_url")
+    context = record.get("address_locality_context")
+    if context is not None:
+        context = validate_locality_context(context)
     return {"id": source_id, "registry": registry, "name": _name(name), "point": point,
-            "record": _copy_json(record)}
+            "context": context, "record": _copy_json(record)}
 
 
 def _poi(feature):
@@ -98,14 +104,32 @@ def _poi(feature):
     return {"id": identifier, "name": _name(tags.get("name", "")), "point": point,
             "tags": tags, "precision": props.get("location_precision") or
             ("exact_source" if kind == "node" else "osm_bbox_center" if point else "unknown"),
-            "feature": _copy_json(feature)}
+             "feature": _copy_json(feature)}
+
+
+def _subject_role(tags):
+    object_markers = ("heritage", "historic", "building")
+    if any(tags.get(key) and tags[key].lower() not in ("no", "0") for key in object_markers) or (
+            tags.get("amenity") == "place_of_worship"):
+        return "mixed_or_object_evidence"
+    if tags.get("tourism") == "information" or tags.get("information") in ("board", "guidepost", "map"):
+        return "information_about_feature"
+    if tags.get("highway") == "bus_stop" or tags.get("public_transport") in ("platform", "stop_position"):
+        return "transport_stop"
+    return "object_or_unspecified"
 
 
 def _evidence(record, poi):
     distance = (abs(_GEOD.inv(*record["point"], *poi["point"])[2])
                 if record["point"] is not None and poi["point"] is not None else None)
+    comparison = (compare_locality_context(record["context"], poi["point"])
+                  if record["context"] is not None else {"status": "unavailable"})
     return {"official_name": record["record"]["name"],
+            "official_address": record["record"].get("source_address"),
+            "official_address_locality_context": record["context"],
+            "address_locality_comparison": comparison,
             "osm_name": poi["tags"].get("name"),
+            "osm_subject_role": _subject_role(poi["tags"]),
             "normalized_name_equal": bool(record["name"] and record["name"] == poi["name"]),
             "distance_m": distance,
             "official_location_precision": (record["record"].get("location_precision") or "source_point")
@@ -153,7 +177,8 @@ def match_heritage(official_records: list, poi_features: list, radius_m=100.0) -
                 names_located[(record["name"], cell)].append(record)
                 located_by_name[record["name"]].append(record)
 
-    links, candidates, invalid, unmatched = [], [], [], []
+    links, candidates, excluded, invalid, unmatched = [], [], [], [], []
+    okn_links = okn_only_links = 0
     comparisons = 0
 
     def encounter():
@@ -163,28 +188,53 @@ def match_heritage(official_records: list, poi_features: list, radius_m=100.0) -
             raise ValueError("too_many_comparisons")
 
     def emit(target, item):
-        if len(links) + len(candidates) + len(invalid) + len(unmatched) >= MAX_OUTPUT:
+        if len(links) + len(candidates) + len(excluded) + len(invalid) + len(unmatched) >= MAX_OUTPUT:
             raise ValueError("too_many_output_entries")
         target.append(item)
 
     for poi in pois:
-        valid = set()
-        for key in _REF_KEYS:
+        valid = defaultdict(set)
+        for key in (*_REF_KEYS, _OKN_KEY):
             if key in poi["tags"]:
                 tokens = _SPLIT.split(poi["tags"][key].strip())
                 for token in tokens:
                     if _REGISTRY.fullmatch(token):
-                        valid.add(token)
+                        valid[token].add(key)
                     else:
-                        emit(invalid, {"poi_id": poi["id"], "tag": key, "token": token})
+                        entry = {"poi_id": poi["id"], "tag": key, "token": token}
+                        if key == _OKN_KEY:
+                            entry["reason"] = "ref_okn_not_national_15_digit"
+                        emit(invalid, entry)
         linked = set()
+        known_numbers = {number for number in valid if refs.get(number)}
         for number in sorted(valid):
-            if not refs[number]:
-                emit(unmatched, {"poi_id": poi["id"], "registry_number": number})
-            for record in refs[number]:
+            tags = valid[number]
+            matching_records = refs.get(number, ())
+            if not matching_records:
+                entry = {"poi_id": poi["id"], "registry_number": number}
+                if tags == {_OKN_KEY}:
+                    entry.update(tag=_OKN_KEY, namespace_status="unverified")
+                emit(unmatched, entry)
+            for record in matching_records:
                 encounter()
                 linked.add(record["id"])
                 evidence = _evidence(record, poi)
+                evidence["supporting_ref_tags"] = [{"tag": key, "value": number}
+                                                   for key in (*_REF_KEYS, _OKN_KEY) if key in tags]
+                evidence["identifier_namespace_status"] = (
+                    "explicit_national_ref" if tags.intersection(_REF_KEYS)
+                    else "ref_okn_exact_registry_value_namespace_unverified")
+                if _OKN_KEY in tags:
+                    evidence["warnings"].append(_OKN_WARNING)
+                    okn_links += 1
+                    if not tags.intersection(_REF_KEYS):
+                        okn_only_links += 1
+                if evidence["osm_subject_role"] in ("information_about_feature", "transport_stop"):
+                    evidence["warnings"].append(
+                        "identifier_reference_on_non_object_subject_not_physical_identity")
+                if evidence["address_locality_comparison"]["status"] == "outside_guarded_context_envelope":
+                    evidence["warnings"].append(
+                        "identifier_reference_address_locality_conflict_not_physical_identity")
                 emit(links, {"source_record_id": record["id"], "poi_id": poi["id"],
                              "registry_number": number,
                              "status": "ambiguous_identifier" if len(refs[number]) > 1 else "identifier_link",
@@ -195,19 +245,35 @@ def match_heritage(official_records: list, poi_features: list, radius_m=100.0) -
                              "evidence": evidence})
         if not poi["name"]:
             continue
+        def emit_candidate(record, status, evidence):
+            if evidence["osm_subject_role"] in ("information_about_feature", "transport_stop"):
+                reason = "osm_non_object_subject_role"
+            elif (status == "name_only_unlocated_candidate" and known_numbers
+                  and record["registry"] is not None and record["registry"] not in known_numbers):
+                reason = "unlocated_name_conflicts_with_explicit_registry_reference"
+            elif (status == "name_only_unlocated_candidate" and record["point"] is None
+                  and evidence["address_locality_comparison"]["status"]
+                  == "outside_guarded_context_envelope"):
+                reason = "unlocated_address_locality_conflict"
+            else:
+                reason = None
+            if reason:
+                emit(excluded, {"source_record_id": record["id"], "poi_id": poi["id"],
+                                "status": "excluded_name_candidate", "reason": reason,
+                                "evidence": evidence})
+            else:
+                emit(candidates, {"source_record_id": record["id"], "poi_id": poi["id"],
+                                  "status": status, "evidence": evidence})
+
         for record in names_unlocated[poi["name"]]:
             encounter()
             if record["id"] not in linked:
-                emit(candidates, {"source_record_id": record["id"], "poi_id": poi["id"],
-                                  "status": "name_only_unlocated_candidate",
-                                  "evidence": _evidence(record, poi)})
+                emit_candidate(record, "name_only_unlocated_candidate", _evidence(record, poi))
         if poi["point"] is None:
             for record in located_by_name[poi["name"]]:
                 encounter()
                 if record["id"] not in linked:
-                    emit(candidates, {"source_record_id": record["id"], "poi_id": poi["id"],
-                                      "status": "name_only_unlocated_candidate",
-                                      "evidence": _evidence(record, poi)})
+                    emit_candidate(record, "name_only_unlocated_candidate", _evidence(record, poi))
             continue
         cell = _cell(*poi["point"], size)
         for dx in (-1, 0, 1):
@@ -220,10 +286,10 @@ def match_heritage(official_records: list, poi_features: list, radius_m=100.0) -
                             continue
                         evidence = _evidence(record, poi)
                         if evidence["distance_m"] <= radius_m:
-                            emit(candidates, {"source_record_id": record["id"], "poi_id": poi["id"],
-                                              "status": "name_distance_review_candidate", "evidence": evidence})
+                            emit_candidate(record, "name_distance_review_candidate", evidence)
     links.sort(key=lambda x: (x["source_record_id"], x["poi_id"], x["registry_number"]))
     candidates.sort(key=lambda x: (x["source_record_id"], x["poi_id"]))
+    excluded.sort(key=lambda x: (x["source_record_id"], x["poi_id"]))
     invalid.sort(key=lambda x: (x["poi_id"], x["tag"], x["token"]))
     unmatched.sort(key=lambda x: (x["poi_id"], x["registry_number"]))
     return {"schema_version": 1, "artifact_kind": "advisory_heritage_matching",
@@ -234,12 +300,22 @@ def match_heritage(official_records: list, poi_features: list, radius_m=100.0) -
             "official_records": [x["record"] for x in records],
             "poi_features": [x["feature"] for x in pois],
             "identifier_links": links, "review_candidates": candidates,
+            "excluded_review_candidates": excluded,
             "invalid_ref_tokens": invalid, "unmatched_valid_refs": unmatched,
             "summary": {"input_official_records": len(records), "input_poi_features": len(pois),
                         "official_with_registry_number": sum(x["registry"] is not None for x in records),
                         "official_with_point": sum(x["point"] is not None for x in records),
                         "poi_with_point": sum(x["point"] is not None for x in pois),
                         "ambiguous_registry_numbers": sorted(k for k, v in refs.items() if len(v) > 1),
-                        "identifier_link_count": len(links), "review_candidate_count": len(candidates),
+                        "identifier_link_count": len(links),
+                        "ref_okn_identifier_link_count": okn_links,
+                        "ref_okn_only_identifier_link_count": okn_only_links,
+                        "review_candidate_count": len(candidates),
+                        "excluded_review_candidate_count": len(excluded),
+                        "exclusion_counts": {
+                            reason: sum(x["reason"] == reason for x in excluded)
+                            for reason in ("osm_non_object_subject_role",
+                                           "unlocated_name_conflicts_with_explicit_registry_reference",
+                                           "unlocated_address_locality_conflict")},
                         "comparisons": comparisons, "auto_merged_count": 0},
             "limitations": list(_LIMITATIONS)}

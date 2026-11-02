@@ -7,6 +7,7 @@
 | [implementation_status.md](implementation_status.md) | Этапы E00–E16, реальные результаты, ограничения и точное продолжение |
 | [e03_acceptance.md](e03_acceptance.md) | Приёмка единого автоматического сбора: чистый запуск, повтор, две территории и отказы |
 | [e04_registry_enrichment.md](e04_registry_enrichment.md) | Частичные официальные каталоги, рекомендательные связи и диагностика некорректного ZIP ЕГРОКН |
+| [e04_heritage_validation.md](e04_heritage_validation.md) | Размеченные контрольные пары, пропуски/ложные кандидаты и границы интерпретации метрик |
 | [pilot_scope.md](pilot_scope.md) | Павловск — Гатчина, юрисдикции, сущности и единицы |
 | [data_sources.md](data_sources.md) | Реестр источников, реальные ответы и роли наборов в расчётах |
 | [methods_matrix.md](methods_matrix.md) | Основания методов, допущения и статус проверки литературы |

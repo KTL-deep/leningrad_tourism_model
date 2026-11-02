@@ -10,15 +10,21 @@ from scripts.collect_territory import _journal
 from src.etl.adapters.lenobl_oopt import LenoblOoptAdapter
 from src.etl.adapters.mkrf_registry import MkrfRegistryAdapter
 from src.etl.http_session import BoundedSession
+from src.etl.heritage_locality import HeritageLocalityResolver
 from src.pipeline.registry_enrichment import enrich_territory_run
 from src.storage import SnapshotStore
 
 
-def main(argv=None, *, heritage_adapter=None, oopt_adapter=None, session=None):
+_DEFAULT_LOCALITY_RESOLVER = object()
+
+
+def main(argv=None, *, heritage_adapter=None, oopt_adapter=None, session=None,
+         locality_resolver=_DEFAULT_LOCALITY_RESOLVER):
     cli = argparse.ArgumentParser(description=__doc__)
     cli.add_argument("--run-id", required=True, help="Existing collect_territory RunManifest ID")
     cli.add_argument("--store", type=Path, default=ROOT / "data" / "analysis")
     cli.add_argument("--offline", action="store_true")
+    cli.add_argument("--skip-locality-context", action="store_true")
     args = cli.parse_args(argv)
     attempt = uuid4().hex
     log = args.store / "logs" / f"registry-enrichment-{attempt}.json"
@@ -31,7 +37,12 @@ def main(argv=None, *, heritage_adapter=None, oopt_adapter=None, session=None):
             store, args.store / "cache" / "mkrf_registry", session=transport, offline=args.offline)
         protected = oopt_adapter if oopt_adapter is not None else LenoblOoptAdapter(
             store, args.store / "cache" / "lenobl_oopt", session=transport, offline=args.offline)
-        result = enrich_territory_run(store, args.run_id, heritage_adapter=heritage, oopt_adapter=protected)
+        resolver = (None if args.skip_locality_context else
+                    HeritageLocalityResolver(store, args.store / "cache" / "nominatim",
+                                             session=transport, offline=args.offline)
+                    if locality_resolver is _DEFAULT_LOCALITY_RESOLVER else locality_resolver)
+        result = enrich_territory_run(store, args.run_id, heritage_adapter=heritage,
+                                      oopt_adapter=protected, locality_resolver=resolver)
     except (ValueError, OSError, RuntimeError) as exc:
         result = {"stage": "official_registry_enrichment", "status": "failed",
                   "source_run_id": args.run_id, "analysis_performed": False,
