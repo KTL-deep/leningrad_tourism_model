@@ -92,3 +92,6 @@ powershell.cmd
 !docs/december_reuse_plan.md
 !docs/analogue_reuse_audit_20261104.md
 !docs/reuse_sources.json
+
+# Normative audit and bounded E06 implementation specification.
+!docs/legal_scope_audit_20261104.md

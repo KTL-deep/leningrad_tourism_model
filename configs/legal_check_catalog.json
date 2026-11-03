@@ -1,0 +1,431 @@
+{
+  "schema_version": 1,
+  "kind": "planned_normative_check_catalog",
+  "updated": "2026-11-04",
+  "base_commit": "6f9aaf4a7d5ac946aaf2ee78f1d3b35fc7eb6650",
+  "execution_enabled": false,
+  "runtime_imported": false,
+  "source_of_truth": "docs/legal_rules.md",
+  "implementation_plan": "docs/legal_scope_audit_20261104.md",
+  "note": "Это задание для E06, не исполняемый набор запретов. Пункты, геометрии и даты каждого реального правила должны быть проверены отдельно. Нет универсальных юридических буферов.",
+  "outcomes": [
+    "blocked",
+    "requires_review",
+    "unknown",
+    "no_conflict_in_checked_scope",
+    "not_applicable"
+  ],
+  "documents": [
+    {
+      "id": "L01",
+      "title": "Федеральный закон от 25.06.2002 №73-ФЗ «Об объектах культурного наследия…»",
+      "clauses_to_apply": "Ст.5.1, 34, 34.1; для работ по сохранению — ст.45; точный применимый пункт до кодирования",
+      "use": "Территории ОКН, охранные/защитные зоны, требования к конкретному виду работ. Не считать всякое улучшение работами по сохранению.",
+      "url": "https://www.consultant.ru/document/cons_doc_LAW_37318/",
+      "verification_extent": "Прочитаны доступные положения/метаданные; справочная консолидированная копия. Официальный маршрут из прежнего реестра не открылся; полная история редакций не удостоверена.",
+      "role": "rule_basis",
+      "runtime_rule_ready": false
+    },
+    {
+      "id": "L02",
+      "title": "Федеральный закон от 14.03.1995 №33-ФЗ «Об особо охраняемых природных территориях»",
+      "clauses_to_apply": "Ст.2 и применимые статьи соответствующей категории + индивидуальное положение/зонирование",
+      "use": "Режим конкретной ООПТ и её зоны. Не общий запрет туризма и не формула допустимого турпотока.",
+      "url": "https://www.consultant.ru/document/cons_doc_LAW_6072/",
+      "verification_extent": "Сверены реквизиты и доступные положения; индивидуальные режимы городских мер ещё не получены.",
+      "role": "rule_basis",
+      "runtime_rule_ready": false
+    },
+    {
+      "id": "L03",
+      "title": "Федеральный закон от 24.11.1996 №132-ФЗ «Об основах туристской деятельности в Российской Федерации»",
+      "clauses_to_apply": "Термины/полномочия; при размещении — применимые положения о классификации",
+      "use": "Отраслевая постановка НИР, сведения о туристической инфраструктуре. Не разрешение строительства и не норма ресторанов на туриста.",
+      "url": "https://www.consultant.ru/document/cons_doc_LAW_12462/",
+      "verification_extent": "Открыта справочная консолидированная страница 04.11.2026: реквизиты/структура подтверждены; есть ссылка на будущую редакцию, её нельзя автоматически применять. Новый земельный запрет не извлекался.",
+      "role": "context_only",
+      "runtime_rule_ready": false
+    },
+    {
+      "id": "L04",
+      "title": "Градостроительный кодекс РФ от 29.12.2004 №190-ФЗ",
+      "clauses_to_apply": "Ст.23, 30, 36–39; документы планировки — ст.41–43; разрешение — ст.51; сведения ГПЗУ — ст.57.3",
+      "use": "ПЗЗ/ВРИ, пределы применимости регламентов, территориальное планирование и требуемые дальнейшие процедуры.",
+      "url": "https://www.consultant.ru/document/cons_doc_LAW_51040/",
+      "verification_extent": "Проверены доступные тексты ст.36/37/57.3 с изменениями 2026; не утверждается полный машинный контроль кодекса.",
+      "role": "rule_basis",
+      "runtime_rule_ready": false
+    },
+    {
+      "id": "L05",
+      "title": "Закон Ленобласти от 23.06.2025 №70-оз «Об утверждении Стратегии социально-экономического развития Ленинградской области до 2036 года»",
+      "clauses_to_apply": "Положения туристического развития — см. исследовательское уточнение 02.11",
+      "use": "Стратегическая согласованность, не запрет/разрешение площадки.",
+      "url": "https://publication.pravo.gov.ru/document/4700202506240002",
+      "verification_extent": "Официальные реквизиты ранее установлены; статус реализации отдельных целей не выводится из текста стратегии.",
+      "role": "context_only",
+      "runtime_rule_ready": false
+    },
+    {
+      "id": "L06",
+      "title": "Индивидуальные акты установления территорий/зон ОКН и ООПТ и их режимов",
+      "clauses_to_apply": "Конкретный акт, приложение с границами и пункт для конкретного действия",
+      "use": "Главный источник контуров и запретов. Каждая зона требует собственного основания, даты и охвата.",
+      "url": "https://ooptlo.ru/",
+      "verification_extent": "Есть опубликованные индивидуальные положения ООПТ; применимые городские комплекты ОКН/ООПТ и их действующие редакции пока не удостоверены.",
+      "role": "individual_acts_required",
+      "runtime_rule_ready": false
+    },
+    {
+      "id": "L07",
+      "title": "Земельный кодекс РФ от 25.10.2001 №136-ФЗ",
+      "clauses_to_apply": "Ст.42; глава XIX, в частности ст.105–107; применимость/переходные положения проверить по зоне",
+      "use": "ЗОУИТ и землепользование; наличие зоны не означает одинаковый запрет для всех действий.",
+      "url": "https://www.consultant.ru/document/cons_doc_LAW_33773/",
+      "verification_extent": "Проверен перечень ст.105 в доступной консолидированной копии; полные сведения об участках/правах не получены.",
+      "role": "rule_basis",
+      "runtime_rule_ready": false
+    },
+    {
+      "id": "L08",
+      "title": "Водный кодекс РФ от 03.06.2006 №74-ФЗ",
+      "clauses_to_apply": "Ст.6, 65, 67.1; при рекреационном использовании воды — ст.50",
+      "use": "Береговая полоса, водоохранные/прибрежные зоны, затопление. Водоохранная зона не равна полному запрету строительства; нужны конкретные условия.",
+      "url": "https://www.consultant.ru/document/cons_doc_LAW_60683/",
+      "verification_extent": "Проверены доступные положения ст.6/65. Численные буферы в программу не включены: нет подтверждённых исходных юридических линий и условий.",
+      "role": "rule_basis",
+      "runtime_rule_ready": false
+    },
+    {
+      "id": "L09",
+      "title": "Действующие ПЗЗ и градостроительные регламенты применимой части каждого города",
+      "clauses_to_apply": "ВРИ/условно разрешённые виды/параметры, карта, исключения, основные акты и изменения",
+      "use": "Совместимость конкретной меры с регламентом. Основной ВРИ не отменяет остальные режимы и права на участок.",
+      "url": "https://admtih.ru/working/urban-pa/pzz/",
+      "verification_extent": "Маршруты пяти городов ниже; ссылки не доказывают актуальность всей цепочки изменений или готовность векторных данных.",
+      "role": "local_documents_required",
+      "runtime_rule_ready": false
+    },
+    {
+      "id": "L10",
+      "title": "Генеральный план и применимая документация по планировке территории",
+      "clauses_to_apply": "Функциональные зоны/планируемые объекты; ППТ/ПМТ/красные линии при необходимости",
+      "use": "Контекст и специальные условия размещения, не замена ПЗЗ. Для общего пользования/линейных объектов учитывать исключения ст.36 ГрК.",
+      "url": "https://www.consultant.ru/document/cons_doc_LAW_51040/fb76ce1fdb5356574b298a9dcdafcfc8fc6c937b/",
+      "verification_extent": "Правовая роль подтверждена по ст.57.3; полный набор актуальных местных документов пяти городов не получен.",
+      "role": "local_documents_required",
+      "runtime_rule_ready": false
+    },
+    {
+      "id": "L11",
+      "title": "Постановление Правительства Ленобласти от 22.03.2012 №83 «Об утверждении Региональных нормативов градостроительного проектирования Ленинградской области» с применимыми изменениями",
+      "clauses_to_apply": "Конкретный показатель, категория территории/объекта и расчётная группа — до использования",
+      "use": "Показатели обеспеченности/доступности в установленной сфере действия. Нормы на жителей нельзя автоматически переводить в потребность туристов.",
+      "url": "https://base.garant.ru/35367379/",
+      "verification_extent": "Найдены реквизиты и сведения об изменениях 2026; имеющаяся официальная копия ред.29.11.2022 не подтверждает актуальную консолидацию. Численные правила отключены.",
+      "role": "revision_and_clause_required",
+      "runtime_rule_ready": false
+    },
+    {
+      "id": "L12",
+      "title": "СП 42.13330.2026 «Градостроительство. Планировка и застройка территорий»",
+      "clauses_to_apply": "Точный пункт/таблица для выбранной меры после чтения полного актуального текста",
+      "use": "Общая градостроительная рамка; не универсальный радиус услуг и не проверка всего проекта.",
+      "url": "https://protect.gost.ru/sp/details/f6917ab4-63d8-4ecb-9794-0b4990ba3b99",
+      "verification_extent": "Официальная карточка: действует с 12.07.2026, приказ Минстроя 11.06.2026 №368/пр, заменяет СП42.13330.2016. Полный текст/численные пункты не извлекались.",
+      "role": "technical_reference",
+      "runtime_rule_ready": false
+    },
+    {
+      "id": "L13",
+      "title": "СП 59.13330.2020 «Доступность зданий и сооружений для маломобильных групп населения» с применимыми изменениями",
+      "clauses_to_apply": "Пункты о путях движения/входах/сервисе только при известных проектных характеристиках",
+      "use": "Постановка проверок доступности; при отсутствии уклонов/ширин/покрытия соответствие неизвестно.",
+      "url": "https://protect.gost.ru/sp/details/9a314146-2e12-458d-a3dc-914eaa364d51",
+      "verification_extent": "Официальная карточка: действует; перечислены изменения №1–4. Нужный пункт в актуальной редакции и обязательность применения устанавливаются отдельно.",
+      "role": "technical_reference",
+      "runtime_rule_ready": false
+    },
+    {
+      "id": "L14",
+      "title": "СП 82.13330.2016 «Благоустройство территорий» с применимыми изменениями",
+      "clauses_to_apply": "Точный пункт и параметры выбранного элемента благоустройства",
+      "use": "Требования к решениям благоустройства; не основание разрешить земляные работы в охранной зоне.",
+      "url": "https://protect.gost.ru/sp/details/8d5a8ef5-f450-4356-ac88-72cd17c416cf",
+      "verification_extent": "Официальная карточка: действует, перечислены изменения №1–3; численные проверки в этой сессии не кодировались.",
+      "role": "technical_reference",
+      "runtime_rule_ready": false
+    },
+    {
+      "id": "L15",
+      "title": "Действующие муниципальные правила благоустройства и схемы размещения объектов при применимости",
+      "clauses_to_apply": "Конкретный местный акт/пункт; схемы НТО — если предлагается именно НТО",
+      "use": "Условия работ в общественном пространстве, размещения оборудования/нестационарных объектов; некапитальность не означает отсутствие требований.",
+      "url": "https://www.consultant.ru/document/cons_doc_LAW_51040/fb76ce1fdb5356574b298a9dcdafcfc8fc6c937b/",
+      "verification_extent": "Роль местных требований отражена в ст.57.3 ГрК; конкретные комплекты для всех пяти городов ещё не подобраны. Ссылка — на федеральное основание, не местный акт.",
+      "role": "local_documents_required",
+      "runtime_rule_ready": false
+    },
+    {
+      "id": "L16",
+      "title": "Лесной кодекс РФ от 04.12.2006 №200-ФЗ",
+      "clauses_to_apply": "Ст.11, 41 и применимые лесные регламенты/основания использования",
+      "use": "Меры на землях/территориях, где применим лесной режим; парк OSM не удостоверяет правовую категорию.",
+      "url": "https://www.consultant.ru/document/cons_doc_LAW_64299/",
+      "verification_extent": "Рекреационное использование по ст.41 подтверждено; детальный лесной контур/право использования — расширение при наличии данных.",
+      "role": "extension",
+      "runtime_rule_ready": false
+    },
+    {
+      "id": "L17",
+      "title": "Федеральный закон от 30.12.2009 №384-ФЗ «Технический регламент о безопасности зданий и сооружений»",
+      "clauses_to_apply": "Применимые требования и документы стандартизации для конкретного проекта",
+      "use": "Граница проектной стадии: городская сценарная модель не проверяет конструктивную/инженерную безопасность.",
+      "url": "https://www.consultant.ru/document/cons_doc_LAW_95720/",
+      "verification_extent": "Открыта справочная страница: реквизиты и структура подтверждены; полный аудит требований и применимых проектных положений не выполнялся.",
+      "role": "design_stage",
+      "runtime_rule_ready": false
+    },
+    {
+      "id": "L18",
+      "title": "Федеральный закон от 22.07.2008 №123-ФЗ «Технический регламент о требованиях пожарной безопасности»",
+      "clauses_to_apply": "Применимые требования по назначению и проекту",
+      "use": "Пожарная безопасность/доступ пожарной техники/разрывы не рассчитываются по одному набору POI.",
+      "url": "https://www.consultant.ru/document/cons_doc_LAW_78699/",
+      "verification_extent": "Открыта справочная страница: реквизиты и структура подтверждены; полный аудит требований и применимых проектных положений не выполнялся.",
+      "role": "design_stage",
+      "runtime_rule_ready": false
+    }
+  ],
+  "checks": [
+    {
+      "id": "LC-PZZ",
+      "documents": [
+        "L04",
+        "L09",
+        "L10"
+      ],
+      "actions": [
+        "new_capital",
+        "new_noncapital",
+        "reconstruction",
+        "change_use"
+      ],
+      "required": [
+        "action_footprint",
+        "applicable_zone_geometry",
+        "effective_regulation",
+        "vri_mapping",
+        "coverage"
+      ],
+      "predicate": "Сопоставить вид действия/использования с применимым регламентом; исключения ст.36 ГрК направляют к специальной проверке.",
+      "prohibition": "Только установленное противоречие конкретному применимому правилу.",
+      "review": "Условно разрешённый ВРИ/необходимая процедура либо исключение, требующее другого основания.",
+      "execution_enabled": false,
+      "missing_required_result": "unknown",
+      "status": "planned_not_implemented",
+      "ready_runtime_rule": false
+    },
+    {
+      "id": "LC-HERITAGE",
+      "documents": [
+        "L01",
+        "L06"
+      ],
+      "actions": [
+        "new_capital",
+        "new_noncapital",
+        "reconstruction",
+        "repair",
+        "change_use",
+        "physical_access_upgrade",
+        "information_installation"
+      ],
+      "required": [
+        "action_footprint",
+        "heritage_territory_or_zone_geometry",
+        "effective_individual_regime",
+        "work_type",
+        "coverage"
+      ],
+      "predicate": "Пересечь с проверенной территорией/зоной и применить режим именно данного вида работ.",
+      "prohibition": "Только подтверждённый запрет без применимой оговорки/исключения.",
+      "review": "Требуется согласование, специальный проект/экспертиза либо проверки археологии/охраняемых видов.",
+      "execution_enabled": false,
+      "missing_required_result": "unknown",
+      "status": "planned_not_implemented",
+      "ready_runtime_rule": false
+    },
+    {
+      "id": "LC-OOPT",
+      "documents": [
+        "L02",
+        "L06"
+      ],
+      "actions": [
+        "new_capital",
+        "new_noncapital",
+        "reconstruction",
+        "repair",
+        "route_existing",
+        "physical_access_upgrade",
+        "information_installation"
+      ],
+      "required": [
+        "action_footprint",
+        "oopt_functional_zone_geometry",
+        "effective_individual_regime",
+        "season",
+        "coverage"
+      ],
+      "predicate": "Проверить режим конкретной ООПТ/функциональной зоны и сезон.",
+      "prohibition": "Подтверждённо запрещённый режимом вид работ/посещения.",
+      "review": "Вид работ/доступ допускается с отдельными условиями/согласованием.",
+      "execution_enabled": false,
+      "missing_required_result": "unknown",
+      "status": "planned_not_implemented",
+      "ready_runtime_rule": false
+    },
+    {
+      "id": "LC-WATER",
+      "documents": [
+        "L07",
+        "L08",
+        "L06"
+      ],
+      "actions": [
+        "new_capital",
+        "new_noncapital",
+        "reconstruction",
+        "repair",
+        "physical_access_upgrade"
+      ],
+      "required": [
+        "action_footprint",
+        "official_water_restriction_geometry",
+        "effective_restriction",
+        "work_type",
+        "coverage"
+      ],
+      "predicate": "Различать береговую полосу, водоохранную, прибрежную и зону затопления; применить относящееся условие.",
+      "prohibition": "Только установленный запрет именно данного действия.",
+      "review": "Требуются сведения о защите вод/инженерных условиях; не считать всю зону запрещённой.",
+      "execution_enabled": false,
+      "missing_required_result": "unknown",
+      "status": "planned_not_implemented",
+      "ready_runtime_rule": false
+    },
+    {
+      "id": "LC-OTHER-ZOUIT",
+      "documents": [
+        "L07",
+        "L06"
+      ],
+      "actions": [
+        "new_capital",
+        "new_noncapital",
+        "reconstruction",
+        "repair",
+        "physical_access_upgrade"
+      ],
+      "required": [
+        "action_footprint",
+        "official_zone_geometry",
+        "effective_individual_restriction",
+        "coverage"
+      ],
+      "predicate": "Только полученные применимые ЗОУИТ; не обещает исчерпывающий реестр.",
+      "prohibition": "Явно установленный запрет конкретного действия.",
+      "review": "Условия зоны требуют проектных сведений/согласования.",
+      "execution_enabled": false,
+      "missing_required_result": "unknown",
+      "status": "planned_not_implemented",
+      "ready_runtime_rule": false
+    },
+    {
+      "id": "LC-PUBLIC-SPACE",
+      "documents": [
+        "L04",
+        "L10",
+        "L15"
+      ],
+      "actions": [
+        "new_noncapital",
+        "repair",
+        "physical_access_upgrade",
+        "information_installation"
+      ],
+      "required": [
+        "action_footprint",
+        "public_space_status",
+        "applicable_local_act",
+        "work_type",
+        "coverage"
+      ],
+      "predicate": "Проверить условия пользования/благоустройства и документы размещения; парк OSM не удостоверяет правовой статус.",
+      "prohibition": "Прямой запрет конкретного способа размещения/работ.",
+      "review": "Нужны условия работ, схема размещения, право использования либо согласование.",
+      "execution_enabled": false,
+      "missing_required_result": "unknown",
+      "status": "planned_not_implemented",
+      "ready_runtime_rule": false
+    },
+    {
+      "id": "LC-TECHNICAL",
+      "documents": [
+        "L12",
+        "L13",
+        "L14",
+        "L17",
+        "L18"
+      ],
+      "actions": [
+        "new_capital",
+        "new_noncapital",
+        "reconstruction",
+        "repair",
+        "physical_access_upgrade"
+      ],
+      "required": [
+        "design_parameters",
+        "applicable_current_clause",
+        "applicability_basis"
+      ],
+      "predicate": "До декабря без численных проектных проверок; отражать необходимость проектной проверки/недостаток сведений.",
+      "prohibition": "Каталог не кодирует проектных запретов; не выводить их без параметров и пункта.",
+      "review": "Требуется проектная/техническая проверка; соответствие всем СП не удостоверяется.",
+      "execution_enabled": false,
+      "missing_required_result": "unknown",
+      "status": "planned_not_implemented",
+      "ready_runtime_rule": false
+    },
+    {
+      "id": "LC-FOREST",
+      "documents": [
+        "L16"
+      ],
+      "actions": [
+        "new_capital",
+        "new_noncapital",
+        "reconstruction",
+        "repair",
+        "physical_access_upgrade",
+        "route_existing"
+      ],
+      "required": [
+        "legal_forest_status",
+        "applicable_geometry",
+        "effective_regime",
+        "rights_or_conditions",
+        "coverage"
+      ],
+      "predicate": "Дополнительная группа при применимости лесного режима; расширение после подключения данных.",
+      "prohibition": "Только подтверждённое запрещённое действие.",
+      "review": "Режим/основания рекреационного использования требуют отдельной проверки.",
+      "execution_enabled": false,
+      "missing_required_result": "unknown",
+      "status": "planned_not_implemented",
+      "ready_runtime_rule": false
+    }
+  ]
+}
